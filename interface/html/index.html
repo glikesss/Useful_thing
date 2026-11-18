@@ -1,0 +1,180 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MathLab</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="editor.js" defer></script>
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-icon">M</div>
+            <div>
+                <div class="brand-name">MathLab</div>
+                <div class="brand-subtitle">Scientific workspace</div>
+            </div>
+        </div>
+        <div class="connection">
+            <span class="connection-dot" id="connection-dot"></span>
+            <span id="connection-status">Подключение...</span>
+        </div>
+    </header>
+
+    <main class="workspace">
+        <section class="panel formula-panel">
+            <div class="panel-heading">
+                <div>
+                    <div class="eyebrow">CALCULATION ENGINE</div>
+                    <h2>Формулы</h2>
+                </div>
+                <span class="panel-index">01</span>
+            </div>
+
+            <p class="hint">
+                Одна формула на строку. Например:
+                <code>a = 2.5</code> и <code>f(x) = a*x</code>.
+            </p>
+
+            <textarea
+                id="formula-input"
+                spellcheck="false"
+                placeholder="a = 2.5&#10;f(x) = a*x&#10;g(x) = sin(x)"
+            ></textarea>
+
+            <div class="button-row">
+                <button class="button primary" id="apply-formulas">
+                    Применить формулы
+                </button>
+                <button class="button secondary" id="clear-formulas">
+                    Очистить
+                </button>
+            </div>
+
+            <div class="message" id="formula-message"></div>
+
+            <div class="subsection">
+                <div class="subsection-title">ПЕРЕМЕННЫЕ</div>
+                <div id="variables-list" class="data-list empty">
+                    Переменных пока нет
+                </div>
+            </div>
+
+            <div class="subsection">
+                <div class="subsection-title">ФУНКЦИИ</div>
+                <div id="functions-list" class="tag-list empty">
+                    Функций пока нет
+                </div>
+            </div>
+        </section>
+
+        <div class="right-column">
+            <section class="panel evaluate-panel">
+                <div class="panel-heading">
+                    <div>
+                        <div class="eyebrow">SYMBOLIC / NUMERIC</div>
+                        <h2>Вычисление</h2>
+                    </div>
+                    <span class="panel-index">02</span>
+                </div>
+
+                <div class="input-row">
+                    <input
+                        id="expression-input"
+                        type="text"
+                        spellcheck="false"
+                        placeholder="Например: sqrt(25) + a"
+                    >
+                    <button class="button primary" id="evaluate-button">
+                        Вычислить
+                    </button>
+                </div>
+
+                <div class="result-block">
+                    <div class="subsection-title">РЕЗУЛЬТАТ</div>
+                    <pre id="evaluation-result">Ожидание выражения...</pre>
+                </div>
+                <div class="message" id="evaluation-message"></div>
+            </section>
+
+            <section class="panel data-panel">
+                <div class="panel-heading">
+                    <div>
+                        <div class="eyebrow">EXPERIMENTAL DATA</div>
+                        <h2>Наборы данных</h2>
+                    </div>
+                    <span class="panel-index">03</span>
+                </div>
+
+                <div class="input-row">
+                    <input
+                        id="dataset-name"
+                        type="text"
+                        placeholder="Имя набора (необязательно)"
+                    >
+                    <button class="button primary" id="load-csv">
+                        Загрузить CSV
+                    </button>
+                </div>
+
+                <div id="datasets-list" class="dataset-list empty">
+                    CSV-файлы ещё не загружены
+                </div>
+                <div class="message" id="dataset-message"></div>
+            </section>
+        </div>
+
+        <section class="panel plot-panel">
+            <div class="panel-heading">
+                <div>
+                    <div class="eyebrow">DATA VISUALIZATION</div>
+                    <h2>График</h2>
+                </div>
+                <span class="panel-index">04</span>
+            </div>
+
+            <div class="plot-controls">
+                <label>
+                    Набор данных
+                    <select id="plot-dataset" disabled>
+                        <option value="">Нет данных</option>
+                    </select>
+                </label>
+                <label>
+                    Ось X
+                    <select id="plot-x" disabled>
+                        <option value="">—</option>
+                    </select>
+                </label>
+                <label>
+                    Ось Y
+                    <select id="plot-y" disabled>
+                        <option value="">—</option>
+                    </select>
+                </label>
+                <label class="title-field">
+                    Заголовок
+                    <input id="plot-title" type="text" placeholder="Название графика">
+                </label>
+                <button class="button primary plot-button" id="render-plot" disabled>
+                    Построить
+                </button>
+            </div>
+
+            <div class="plot-container">
+                <div id="plot-placeholder">
+                    Загрузите CSV и выберите столбцы для построения графика
+                </div>
+                <img id="plot-image" alt="Построенный график" hidden>
+            </div>
+            <div class="message" id="plot-message"></div>
+        </section>
+    </main>
+
+    <footer>
+        <span>MathLab</span>
+        <span>Python · SymPy · NumPy · Pandas · Matplotlib</span>
+    </footer>
+</body>
+</html>
