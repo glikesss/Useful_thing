@@ -460,7 +460,7 @@ def test_bridge_includes_presentation_mathml_for_formulas():
 def test_bridge_exports_full_table_to_excel(tmp_path):
     source = tmp_path / "source.csv"
     output = tmp_path / "table.xlsx"
-    source.write_text("time,value\\n0,1.5\\n1,2.5\\n", encoding="utf-8")
+    source.write_text("time,value\n0,1.5\n1,2.5\n", encoding="utf-8")
     bridge = MathLabBridge()
     bridge.load_csv(source, "measurement")
 
@@ -475,7 +475,7 @@ def test_bridge_exports_full_table_to_excel(tmp_path):
 def test_bridge_exports_table_as_image_or_pdf(tmp_path, file_format):
     source = tmp_path / "source.csv"
     output = tmp_path / ("table." + file_format)
-    source.write_text("time,value\\n0,1\\n1,2\\n", encoding="utf-8")
+    source.write_text("time,value\n0,1\n1,2\n", encoding="utf-8")
     bridge = MathLabBridge()
     bridge.load_csv(source, "measurement")
 
@@ -487,4 +487,4 @@ def test_bridge_exports_table_as_image_or_pdf(tmp_path, file_format):
     if file_format == "pdf":
         assert output.read_bytes().startswith(b"%PDF")
     else:
-        assert output.read_bytes().startswith(b"\\x89PNG")
+        assert output.read_bytes().startswith(b"\x89PNG")
