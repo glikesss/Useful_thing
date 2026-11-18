@@ -2,7 +2,7 @@ import sympy as sp
 
 from core import MathEngine
 from units.dimensions import LENGTH, TIME
-from units.quantities import SymbolicQuantity
+from units.quantities import Quantity, SymbolicQuantity
 
 
 def test_differentiate_symbolic_quantity():
@@ -36,3 +36,19 @@ def test_definite_integrate_symbolic_quantity():
     assert isinstance(result, SymbolicQuantity)
     assert result.expression == 2
     assert result.dimension == TIME**2
+
+
+def test_definite_integrate_symbolic_quantity_with_physical_bounds():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+
+    result = engine.integrate(
+        "x",
+        variable="x",
+        lower=Quantity(0, LENGTH),
+        upper=Quantity(2, LENGTH),
+    )
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == 2
+    assert result.dimension == LENGTH**2

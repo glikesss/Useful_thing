@@ -537,14 +537,28 @@ class SymbolicQuantity:
         if lower is None:
             result = sp.integrate(self.expression, variable)
         else:
-            if isinstance(lower, SymbolicQuantity):
+            if isinstance(lower, Quantity):
+                if lower.dimension != variable_dimension:
+                    raise DimensionError(
+                        "Lower integration limit has incompatible dimension"
+                    )
+                lower = lower.value
+
+            elif isinstance(lower, SymbolicQuantity):
                 if lower.dimension != variable_dimension:
                     raise DimensionError(
                         "Lower integration limit has incompatible dimension"
                     )
                 lower = lower.expression
 
-            if isinstance(upper, SymbolicQuantity):
+            if isinstance(upper, Quantity):
+                if upper.dimension != variable_dimension:
+                    raise DimensionError(
+                        "Upper integration limit has incompatible dimension"
+                    )
+                upper = upper.value
+
+            elif isinstance(upper, SymbolicQuantity):
                 if upper.dimension != variable_dimension:
                     raise DimensionError(
                         "Upper integration limit has incompatible dimension"

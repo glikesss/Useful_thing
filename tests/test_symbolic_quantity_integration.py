@@ -7,7 +7,7 @@ from units.dimensions import (
     TIME,
     MASS,
 )
-from units.quantities import SymbolicQuantity
+from units.quantities import Quantity, SymbolicQuantity
 
 
 t = sp.Symbol("t")
@@ -75,3 +75,29 @@ def test_integrate_then_differentiate():
     ) == 0
 
     assert derivative.dimension == integral.dimension
+
+
+def test_definite_integration_with_quantity_bounds():
+    quantity = SymbolicQuantity(3 * t, LENGTH)
+
+    result = quantity.integrate(
+        t,
+        lower=Quantity(0, TIME),
+        upper=Quantity(2, TIME),
+        variable_dimension=TIME,
+    )
+
+    assert result.expression == 6
+    assert result.dimension == LENGTH * TIME
+
+
+def test_quantity_bounds_dimension_mismatch():
+    quantity = SymbolicQuantity(3 * t, LENGTH)
+
+    with pytest.raises(DimensionError):
+        quantity.integrate(
+            t,
+            lower=Quantity(0, TIME),
+            upper=Quantity(2, MASS),
+            variable_dimension=TIME,
+        )
