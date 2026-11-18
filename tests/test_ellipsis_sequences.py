@@ -10,7 +10,7 @@ from core.engine import MathEngine
         ("[1,...,10]", np.arange(1, 11, dtype=float)),
         ("[1, …, 10]", np.arange(1, 11, dtype=float)),
         ("[1, ⋯, 10]", np.arange(1, 11, dtype=float)),
-        (r"[1,\\ldots,10]", np.arange(1, 11, dtype=float)),
+        (r"[1,\ldots,10]", np.arange(1, 11, dtype=float)),
         ("[1,1.1,...,2]", np.arange(1.1, 2.01, 0.1)),
     ],
 )
