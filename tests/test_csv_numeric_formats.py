@@ -41,10 +41,10 @@ def test_csv_decimal_point_and_units(tmp_path):
 def test_csv_empty_numeric_cells_become_nan(tmp_path):
     path = tmp_path / "empty_cells.csv"
     path.write_text(
-        "time;voltage\\n"
-        "0;1.5\\n"
-        "1;\\n"
-        "2;3.5\\n",
+        "time;voltage\n"
+        "0;1.5\n"
+        "1;\n"
+        "2;3.5\n",
         encoding="utf-8",
     )
 
@@ -60,9 +60,9 @@ def test_csv_empty_numeric_cells_become_nan(tmp_path):
 def test_csv_strips_extra_spaces_from_values(tmp_path):
     path = tmp_path / "spaces.csv"
     path.write_text(
-        "time;label\\n"
-        " 0 ; first value \\n"
-        " 1 ; second value \\n",
+        "time;label\n"
+        " 0 ; first value \n"
+        " 1 ; second value \n",
         encoding="utf-8",
     )
 
@@ -75,10 +75,10 @@ def test_csv_strips_extra_spaces_from_values(tmp_path):
 def test_csv_preserves_mixed_numeric_and_text_column(tmp_path):
     path = tmp_path / "mixed.csv"
     path.write_text(
-        "measurement\\n"
-        "1.5\\n"
-        " sensor offline \\n"
-        "2.5\\n",
+        "measurement\n"
+        "1.5\n"
+        " sensor offline \n"
+        "2.5\n",
         encoding="utf-8",
     )
 
