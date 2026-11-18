@@ -42,7 +42,11 @@ def _evaluate_expression(expression, variables):
     if isinstance(expression, np.ndarray):
         result = _substitute_expression(
             expression,
-            {sp.Symbol(name): value for name, value in variables.items()},
+            {
+                sp.Symbol(name): value
+                for name, value in variables.items()
+                if not isinstance(value, (Quantity, SymbolicQuantity))
+            },
         )
         if _expression_symbols(result):
             return result
@@ -59,7 +63,9 @@ def _evaluate_expression(expression, variables):
                 return float(sp.N(result))
             return result
         return expression.subs({
-            sp.Symbol(name): value for name, value in variables.items()
+            sp.Symbol(name): value
+            for name, value in variables.items()
+            if not isinstance(value, (Quantity, SymbolicQuantity))
         })
     return expression
 
@@ -292,6 +298,8 @@ class MathEngine:
                             )
                         if value.is_number:
                             value = float(value)
+                    else:
+                        value = expression
 
                 resolved[name] = value
 
