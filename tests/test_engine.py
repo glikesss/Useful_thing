@@ -168,3 +168,28 @@ def test_user_function_accepts_array_literal_in_expression():
         engine.evaluate("f([1, 2, 3])"),
         np.array([2, 5, 10]),
     )
+
+
+def test_array_indexing_is_one_based():
+    engine = MathEngine()
+    engine.set_lines(["a = [10, 20, 30]"])
+
+    assert engine.evaluate("a[1]") == 10
+    assert engine.evaluate("a[2]") == 20
+    assert engine.evaluate("a[3] + 5") == 35
+
+
+def test_array_indexing_rejects_zero_and_out_of_range():
+    engine = MathEngine()
+    engine.set_lines(["a = [10, 20, 30]"])
+
+    with pytest.raises(EvaluationError):
+        engine.evaluate("a[0]")
+    with pytest.raises(EvaluationError):
+        engine.evaluate("a[4]")
+
+
+def test_array_index_can_be_a_variable():
+    engine = MathEngine()
+    engine.set_lines(["a = [10, 20, 30]", "i = 2"])
+    assert engine.evaluate("a[i]") == 20
