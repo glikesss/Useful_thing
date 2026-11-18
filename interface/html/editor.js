@@ -187,7 +187,7 @@ function updateProcessingControls() {
     }
     // Prefer the first numeric column as X (usually time) and the second as Y.
     if (dataset.numeric_columns.length > 1) {
-        columnSelect.selectedIndex = 2;
+        columnSelect.selectedIndex = 1;
         xSelect.selectedIndex = 1;
     } else if (dataset.numeric_columns.length === 1) {
         xSelect.selectedIndex = 0; // use row index when no separate X column exists
