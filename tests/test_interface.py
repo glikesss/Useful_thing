@@ -520,25 +520,20 @@ def test_bridge_rejects_png_export_for_data_table(tmp_path):
 
 
 @pytest.mark.parametrize("file_format", ["png", "pdf"])
-def test_bridge_exports_rendered_plot_image(tmp_path, monkeypatch, file_format):
-    import base64
+def test_bridge_exports_rendered_plot_with_matplotlib_savefig(tmp_path, monkeypatch, file_format):
     import sys
     from types import SimpleNamespace
-    import matplotlib.pyplot as plt
 
-    buffer = BytesIO()
-    figure, axis = plt.subplots()
-    axis.plot([0, 1, 2], [0, 1, 4])
-    figure.savefig(buffer, format="png")
-    plt.close(figure)
-    image_data = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+    source = tmp_path / "source.csv"
     output = tmp_path / ("graph." + file_format)
+    source.write_text("time,value\\n0,0\\n1,1\\n2,4\\n", encoding="utf-8")
 
     class FakeWindow:
         def create_file_dialog(self, *args, **kwargs):
             return str(output)
 
     bridge = MathLabBridge()
+    bridge.load_csv(source, "measurement")
     bridge._set_window(FakeWindow())
     monkeypatch.setitem(
         sys.modules,
@@ -546,9 +541,14 @@ def test_bridge_exports_rendered_plot_image(tmp_path, monkeypatch, file_format):
         SimpleNamespace(FileDialog=SimpleNamespace(SAVE=1)),
     )
 
-    response = bridge.select_export_plot_file("graph", image_data, file_format)
+    response = bridge.select_export_plot_file(
+        "graph",
+        [{"dataset_name": "measurement", "x_column": "time", "y_column": "value", "label": "y"}],
+        file_format,
+        "csv",
+    )
 
     assert response["ok"] is True, response
     assert output.is_file()
     assert output.stat().st_size > 0
-    assert output.read_bytes().startswith(b"%PDF" if file_format == "pdf" else b"\x89PNG")
+    assert output.read_bytes().startswith(b"%PDF" if file_format == "pdf" else b"\\x89PNG")
