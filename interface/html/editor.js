@@ -223,10 +223,21 @@ async function runProcessing() {
             integrate: "Численное интегрирование методом трапеций: ∫Y dX.",
             statistics: "Описательная статистика для всех числовых столбцов: count — число значений; mean — среднее; std — стандартное отклонение; min/max — минимум/максимум; 25%/50%/75% — квартили."
         };
+        const derivativeColumn = operation === "derivative"
+            ? \`d_\${column}_d_\${xColumn}\`
+            : null;
+        const details = operation === "derivative"
+            ? \`Операция: производная Y по X
+Y: \${column}
+X: \${xColumn}
+Формула: (Y следующей строки − Y текущей строки) / (X следующей строки − X текущей строки)
+Новый столбец: \${derivativeColumn}
+Последняя строка повторяет значение предыдущего интервала.\`
+            : (descriptions[operation] || "");
         byId("processing-result").textContent =
-            (descriptions[operation] || "") + "\\n\\n" +
+            details + "\n\n" +
             (operation === "integrate"
-                ? `${response.message} = ${response.result}`
+                ? \`\${response.message} = \${response.result}\`
                 : (response.result ?? response.message ?? ""));
         if (response.state) renderState(response.state);
         if (response.dataset_name) {
