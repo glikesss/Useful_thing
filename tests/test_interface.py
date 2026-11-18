@@ -454,3 +454,37 @@ def test_bridge_includes_presentation_mathml_for_formulas():
     assert [item["name"] for item in formulas] == ["a", "f"]
     assert all(item["mathml"] for item in formulas)
     assert all("<math" in item["mathml"] for item in formulas)
+
+
+
+def test_bridge_exports_full_table_to_excel(tmp_path):
+    source = tmp_path / "source.csv"
+    output = tmp_path / "table.xlsx"
+    source.write_text("time,value\\n0,1.5\\n1,2.5\\n", encoding="utf-8")
+    bridge = MathLabBridge()
+    bridge.load_csv(source, "measurement")
+
+    response = bridge.export_table("measurement", output, "xlsx")
+
+    assert response["ok"] is True
+    exported = pd.read_excel(output)
+    assert exported.to_dict(orient="list") == {"time": [0, 1], "value": [1.5, 2.5]}
+
+
+@pytest.mark.parametrize("file_format", ["png", "pdf"])
+def test_bridge_exports_table_as_image_or_pdf(tmp_path, file_format):
+    source = tmp_path / "source.csv"
+    output = tmp_path / ("table." + file_format)
+    source.write_text("time,value\\n0,1\\n1,2\\n", encoding="utf-8")
+    bridge = MathLabBridge()
+    bridge.load_csv(source, "measurement")
+
+    response = bridge.export_table("measurement", output, file_format)
+
+    assert response["ok"] is True
+    assert output.is_file()
+    assert output.stat().st_size > 0
+    if file_format == "pdf":
+        assert output.read_bytes().startswith(b"%PDF")
+    else:
+        assert output.read_bytes().startswith(b"\\x89PNG")
