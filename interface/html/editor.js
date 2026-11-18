@@ -620,7 +620,8 @@ async function applyFormulas(automatic = false) {
         }
 
         renderState(response.state, false, true);
-        const rows = Array.from(document.querySelectorAll(".formula-row"));
+        const rows = Array.from(document.querySelectorAll(".formula-row"))
+            .filter(row => formulaMathToSource(row.querySelector(".formula-row-input")));
         let expressionIndex = 0;
 
         for (let i = 0; i < lines.length; i++) {
