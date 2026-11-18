@@ -565,12 +565,12 @@ function renderDatasets(datasets) {
 function renderState(state, updateEditor = false, preserveFormulaEditor = false) {
     currentState = state;
 
-    if (preserveFormulaEditor) {
-        updateFormulaPreviews(state.formulas || []);
-    } else if (updateEditor || !byId("formula-editor-list").children.length) {
-        renderFormulaEditor(state.lines || [], state.formulas || []);
-    } else {
-        renderFormulaEditor(getFormulaLines(), state.formulas || []);
+    if (!preserveFormulaEditor) {
+        if (updateEditor || !byId("formula-editor-list").children.length) {
+            renderFormulaEditor(state.lines || [], state.formulas || []);
+        } else {
+            renderFormulaEditor(getFormulaLines(), state.formulas || []);
+        }
     }
     renderVariables(state.variables);
     renderFunctions(state.functions);
