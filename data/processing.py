@@ -94,12 +94,20 @@ def derivative(
     if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
         raise ValueError("Input columns must contain finite numeric values")
 
-    if np.any(np.diff(x) == 0):
-        raise ValueError("x values must be distinct")
+    dx = np.diff(x)
+    if np.any(dx <= 0):
+        raise ValueError("x values must be strictly increasing")
+
+    # Forward finite differences: each interval's slope belongs to its
+    # left-hand row. The final row reuses the last available interval slope.
+    slopes = np.diff(y) / dx
+    derivative_values = np.empty_like(y)
+    derivative_values[:-1] = slopes
+    derivative_values[-1] = slopes[-1]
 
     result = data.copy()
     output_column = result_column or f"d_{value_column}_d_{x_column or 'index'}"
-    result[output_column] = np.gradient(y, x)
+    result[output_column] = derivative_values
 
     return result
 
