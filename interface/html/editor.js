@@ -453,10 +453,14 @@ function activatePlotGraph(id) {
     if (graph.image) {
         image.src = graph.image;
         image.hidden = false;
+        byId("export-plot-png").disabled = false;
+        byId("export-plot-pdf").disabled = false;
         byId("plot-placeholder").hidden = true;
     } else {
         image.removeAttribute("src");
         image.hidden = true;
+        byId("export-plot-png").disabled = true;
+        byId("export-plot-pdf").disabled = true;
         byId("plot-placeholder").hidden = false;
     }
     renderCurveList();
@@ -486,10 +490,14 @@ function removePlotGraph(id) {
         if (next.image) {
             image.src = next.image;
             image.hidden = false;
+            byId("export-plot-png").disabled = false;
+            byId("export-plot-pdf").disabled = false;
             byId("plot-placeholder").hidden = true;
         } else {
             image.removeAttribute("src");
             image.hidden = true;
+            byId("export-plot-png").disabled = true;
+            byId("export-plot-pdf").disabled = true;
             byId("plot-placeholder").hidden = false;
         }
         renderCurveList();
@@ -583,7 +591,7 @@ function renderDatasets(datasets) {
         plotSelect.disabled = true;
         tableSelect.disabled = true;
         byId("refresh-table").disabled = true;
-        for (const id of ["export-table-png", "export-table-pdf", "export-table-xlsx"]) byId(id).disabled = true;
+        byId("export-table-xlsx").disabled = true;
         updatePlotColumns();
         updatePlotGroupControls();
         renderCurveList();
@@ -649,7 +657,7 @@ function renderDatasets(datasets) {
     tableSelect.value = datasets.some(item => item.name === previousTable)
         ? previousTable
         : datasets[0].name;
-    for (const id of ["export-table-png", "export-table-pdf", "export-table-xlsx"]) byId(id).disabled = !tableSelect.value;
+    byId("export-table-xlsx").disabled = !tableSelect.value;
 
     updatePlotColumns();
     updatePlotGroupControls();
@@ -894,6 +902,26 @@ async function exportTable(fileFormat) {
     }
 }
 
+async function exportPlot(fileFormat) {
+    const image = byId("plot-image");
+    if (image.hidden || !image.src) {
+        setMessage("plot-message", "Сначала постройте график", "error");
+        return;
+    }
+    try {
+        const title = byId("plot-title").value.trim() || getActivePlotGraph().title || "График";
+        const response = await api.select_export_plot_file(title, image.src, fileFormat);
+        if (response.cancelled) return;
+        if (!response.ok) {
+            setMessage("plot-message", response.error, "error");
+            return;
+        }
+        setMessage("plot-message", response.message, "success");
+    } catch (error) {
+        setMessage("plot-message", error.message, "error");
+    }
+}
+
 async function refreshTable() {
     const name = byId("table-dataset").value;
     if (!name) {
@@ -983,6 +1011,8 @@ async function renderPlot() {
 
         byId("plot-image").src = response.image;
         byId("plot-image").hidden = false;
+        byId("export-plot-png").disabled = false;
+        byId("export-plot-pdf").disabled = false;
         byId("plot-placeholder").hidden = true;
         const graph = getActivePlotGraph();
         graph.title = title;
@@ -1046,8 +1076,8 @@ byId("plot-title").addEventListener("input", () => {
 renderPlotTabs();
 byId("table-dataset").addEventListener("change", refreshTable);
 byId("refresh-table").addEventListener("click", refreshTable);
-byId("export-table-png").addEventListener("click", () => exportTable("png"));
-byId("export-table-pdf").addEventListener("click", () => exportTable("pdf"));
+byId("export-plot-png").addEventListener("click", () => exportPlot("png"));
+byId("export-plot-pdf").addEventListener("click", () => exportPlot("pdf"));
 byId("export-table-xlsx").addEventListener("click", () => exportTable("xlsx"));
 byId("table-dataset").addEventListener("change", () => {
     const enabled = Boolean(byId("table-dataset").value);
