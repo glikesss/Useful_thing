@@ -4,6 +4,7 @@ from pathlib import Path
 from threading import RLock
 
 import matplotlib
+import numpy as np
 matplotlib.use("Agg", force=True)
 import pandas as pd
 from sympy.printing.mathml import mathml as sympy_mathml
@@ -415,6 +416,68 @@ class MathLabBridge:
             )
             encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
 
+            return {
+                "ok": True,
+                "image": f"data:image/png;base64,{encoded}",
+                "curve_count": len(curves),
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        finally:
+            if manager is not None:
+                manager.close()
+
+    def render_plot_array_curves(self, curves, title=None):
+        """Render curves directly from named engine array variables."""
+        manager = None
+        try:
+            if not isinstance(curves, list) or not curves:
+                raise ValueError("Добавьте хотя бы одну кривую")
+
+            manager = PlotManager(
+                title=title or "MathLab plot",
+                xlabel="X",
+                ylabel="Y",
+            )
+            labels_x = []
+            labels_y = []
+
+            with self._lock:
+                variables = self.engine.variables.as_dict()
+                for spec in curves:
+                    if not isinstance(spec, dict):
+                        raise TypeError("Каждая кривая должна быть объектом")
+                    x_name = spec.get("x_name")
+                    y_name = spec.get("y_name")
+                    if not x_name or not y_name:
+                        raise ValueError("Выберите массивы X и Y")
+                    x = variables.get(x_name)
+                    y = variables.get(y_name)
+                    if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
+                        raise ValueError(f"'{x_name}' и '{y_name}' должны быть массивами")
+                    x = np.asarray(x, dtype=float).reshape(-1)
+                    y = np.asarray(y, dtype=float).reshape(-1)
+                    if len(x) != len(y):
+                        raise ValueError(
+                            f"Массивы '{x_name}' и '{y_name}' имеют разную длину: {len(x)} и {len(y)}"
+                        )
+                    if len(x) < 2:
+                        raise ValueError("Для построения графика нужно минимум 2 точки")
+                    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
+                        raise ValueError(f"Массивы '{x_name}' и '{y_name}' содержат нечисловые значения")
+                    frame = pd.DataFrame({"x": x, "y": y})
+                    label = spec.get("label") or f"{y_name}({x_name})"
+                    manager.add_curve(frame, "x", "y", label=label)
+                    labels_x.append(x_name)
+                    labels_y.append(y_name)
+
+            manager.set_labels(
+                xlabel=labels_x[0] if len(set(labels_x)) == 1 else "X",
+                ylabel=labels_y[0] if len(set(labels_y)) == 1 else "Y",
+            )
+            buffer = BytesIO()
+            manager.figure.savefig(buffer, format="png", dpi=140, bbox_inches="tight")
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
             return {
                 "ok": True,
                 "image": f"data:image/png;base64,{encoded}",
