@@ -197,7 +197,12 @@
                 </select></label>
                 <label>Столбец Y<select id="process-column" disabled><option value="">—</option></select></label>
                 <label>Столбец X<select id="process-x-column" disabled><option value="">Выберите X</option></select></label>
-                <label id="process-window-label">Окно сглаживания<input id="process-window" type="number" min="1" step="1" value="3"></label>
+                <label id="process-smoothing-method-label">Метод сглаживания<select id="process-smoothing-method">
+                    <option value="moving_average">Скользящее среднее</option>
+                    <option value="savgol">Савицкий — Голея</option>
+                </select></label>
+                <label id="process-window-label">Размер окна<input id="process-window" type="number" min="1" step="1" value="5"></label>
+                <label id="process-polyorder-label" hidden>Порядок полинома<input id="process-polyorder" type="number" min="1" step="1" value="2"></label>
                 <button class="button primary" id="run-processing" disabled>Выполнить</button>
             </div>
             <div class="result-block">
