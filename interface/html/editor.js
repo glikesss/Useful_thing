@@ -595,7 +595,7 @@ async function applyFormulas(automatic = false) {
 
         if (!response.ok) {
             setMessage("formula-message", automatic ? response.error : response.error, "error");
-            updateFormulaPreviews(response.state?.formulas || currentState?.formulas || []);
+            
             return;
         }
 
@@ -615,7 +615,7 @@ function addFormulaLine(afterIndex = null) {
     lines.splice(insertAt, 0, "");
     renderFormulaEditor(lines, currentState?.formulas || []);
     scheduleFormulaApply();
-    const input = byId("formula-editor-list").children[insertAt]?.querySelector("input");
+    const input = byId("formula-editor-list").children[insertAt]?.querySelector(".formula-row-input");
     input?.focus();
 }
 
