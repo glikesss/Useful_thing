@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass, field
+from dataclasses import dataclass, field
 from typing import Any
 
 import pandas as pd
@@ -38,7 +38,20 @@ class Curve:
                 .astype("string")
                 .str.strip()
                 .str.replace(",", ".", regex=False)
-                .replace("", pd.NA)
+                .str.replace("−", "-", regex=False)
+                .str.casefold()
+                .replace({
+                    "": pd.NA,
+                    "бесконечность": float("inf"),
+                    "+бесконечность": float("inf"),
+                    "infinity": float("inf"),
+                    "+infinity": float("inf"),
+                    "∞": float("inf"),
+                    "+∞": float("inf"),
+                    "-бесконечность": float("-inf"),
+                    "-infinity": float("-inf"),
+                    "-∞": float("-inf"),
+                })
             )
             return pd.to_numeric(
                 values, errors="raise"
