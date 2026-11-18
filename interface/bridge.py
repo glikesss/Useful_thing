@@ -20,13 +20,70 @@ class MathLabBridge:
     """Python API exposed to the pywebview frontend."""
 
     def __init__(self):
-        self.engine = MathEngine()
         self.data_manager = DataManager()
+        self.engine = MathEngine(file_provider=self._file_data)
         self._window = None
         self._lock = RLock()
 
     def _set_window(self, window):
         self._window = window
+
+    def _file_data(self, file_numbers, column=None):
+        """Return numeric data from loaded CSV files using their current UI order."""
+        with self._lock:
+            names = self.data_manager.list_datasets()
+            frames = []
+            for number in file_numbers:
+                if number < 1 or number > len(names):
+                    raise ValueError(
+                        f"Файл №{number} не существует (загружено файлов: {len(names)})"
+                    )
+                frame = self.data_manager.get_data(names[number - 1])
+
+                numeric_columns = [
+                    str(name) for name in frame.columns
+                    if self._is_numeric_column(frame[name])
+                ]
+
+                if column is None:
+                    if len(file_numbers) != 1:
+                        raise ValueError("Для нескольких файлов укажите столбец: file([1,2], \"column\")")
+                    selected = numeric_columns
+                    if not selected:
+                        return np.empty((len(frame), 0), dtype=float)
+                    data = frame[selected].apply(
+                        lambda series: pd.to_numeric(
+                            series.astype("string").str.strip().str.replace(",", ".", regex=False),
+                            errors="coerce",
+                        )
+                    )
+                    return data.to_numpy(dtype=float)
+
+                if isinstance(column, str):
+                    if column not in numeric_columns:
+                        raise ValueError(
+                            f"Числовой столбец «{column}» не найден в файле №{number}"
+                        )
+                    column_name = column
+                else:
+                    if column > len(numeric_columns):
+                        raise ValueError(
+                            f"В файле №{number} нет числового столбца №{column}"
+                        )
+                    column_name = numeric_columns[column - 1]
+
+                values = pd.to_numeric(
+                    frame[column_name].astype("string").str.strip().str.replace(",", ".", regex=False),
+                    errors="coerce",
+                ).to_numpy(dtype=float)
+                frames.append(values)
+
+            if len(frames) == 1:
+                return frames[0]
+            result = np.empty(len(frames), dtype=object)
+            for index, values in enumerate(frames):
+                result[index] = values
+            return result
 
     @staticmethod
     def _format_value(value):
