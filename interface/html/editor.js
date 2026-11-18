@@ -6,6 +6,7 @@ let plotCurves = [];
 let plotGraphs = [{id: 1, title: "График 1", curves: [], image: null}];
 let activePlotGraphId = 1;
 let nextPlotGraphId = 2;
+let datasetsExpanded = false;
 let formulaApplyTimer = null;
 let formulaApplyRequest = 0;
 let expressionTimer = null;
@@ -573,6 +574,11 @@ function renderDatasets(datasets) {
     }
 
     container.className = "dataset-list";
+    const toggle = byId("toggle-datasets");
+    toggle.hidden = datasets.length <= 4;
+    toggle.textContent = datasetsExpanded
+        ? "Свернуть список"
+        : "Показать все файлы (" + datasets.length + ")";
     plotSelect.disabled = false;
     tableSelect.disabled = false;
     byId("refresh-table").disabled = false;
@@ -583,6 +589,9 @@ function renderDatasets(datasets) {
     for (const dataset of datasets) {
         const item = document.createElement("div");
         item.className = "dataset-item";
+        if (datasets.length > 4 && !datasetsExpanded && datasets.indexOf(dataset) >= 3) {
+            item.hidden = true;
+        }
 
         const details = document.createElement("div");
         const name = document.createElement("div");
@@ -950,6 +959,10 @@ byId("clear-formulas").addEventListener("click", async () => {
 byId("add-formula-line").addEventListener("click", () => addFormulaLine());
 
 byId("load-csv").addEventListener("click", loadCsv);
+byId("toggle-datasets").addEventListener("click", () => {
+    datasetsExpanded = !datasetsExpanded;
+    renderDatasets(currentState?.datasets || []);
+});
 byId("plot-group-datasets").addEventListener("change", updatePlotGroupColumns);
 byId("add-plot-group").addEventListener("click", addPlotGroupCurves);
 byId("array-import-dataset").addEventListener("change", updateArrayImportColumns);
