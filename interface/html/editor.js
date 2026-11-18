@@ -3,6 +3,9 @@ const byId = (id) => document.getElementById(id);
 let api = null;
 let currentState = null;
 let plotCurves = [];
+let plotGraphs = [{id: 1, title: "График 1", curves: [], image: null}];
+let activePlotGraphId = 1;
+let nextPlotGraphId = 2;
 let formulaApplyTimer = null;
 let formulaApplyRequest = 0;
 let expressionTimer = null;
@@ -367,6 +370,106 @@ function addArrayPlotCurve() {
     setMessage("plot-message", `Добавлена кривая: ${label}`, "success");
 }
 
+function getActivePlotGraph() {
+    return plotGraphs.find(graph => graph.id === activePlotGraphId) || plotGraphs[0];
+}
+
+function saveActivePlotGraph() {
+    const graph = getActivePlotGraph();
+    if (!graph) return;
+    graph.curves = plotCurves;
+    graph.title = byId("plot-title").value.trim() || graph.title;
+    const image = byId("plot-image");
+    graph.image = !image.hidden && image.src ? image.src : graph.image;
+}
+
+function renderPlotTabs() {
+    const container = byId("plot-tabs");
+    container.replaceChildren();
+    plotGraphs.forEach(graph => {
+        const tab = document.createElement("div");
+        tab.className = "plot-tab" + (graph.id === activePlotGraphId ? " active" : "");
+        const select = document.createElement("button");
+        select.type = "button";
+        select.className = "plot-tab-select";
+        select.setAttribute("role", "tab");
+        select.setAttribute("aria-selected", String(graph.id === activePlotGraphId));
+        select.textContent = graph.title || "Без названия";
+        select.addEventListener("click", () => activatePlotGraph(graph.id));
+        tab.appendChild(select);
+        if (plotGraphs.length > 1) {
+            const close = document.createElement("button");
+            close.type = "button";
+            close.className = "plot-tab-close";
+            close.textContent = "×";
+            close.title = "Закрыть график";
+            close.setAttribute("aria-label", "Закрыть " + graph.title);
+            close.addEventListener("click", event => {
+                event.stopPropagation();
+                removePlotGraph(graph.id);
+            });
+            tab.appendChild(close);
+        }
+        container.appendChild(tab);
+    });
+}
+
+function activatePlotGraph(id) {
+    if (id === activePlotGraphId) return;
+    saveActivePlotGraph();
+    const graph = plotGraphs.find(item => item.id === id);
+    if (!graph) return;
+    activePlotGraphId = id;
+    plotCurves = graph.curves;
+    byId("plot-title").value = graph.title;
+    const image = byId("plot-image");
+    if (graph.image) {
+        image.src = graph.image;
+        image.hidden = false;
+        byId("plot-placeholder").hidden = true;
+    } else {
+        image.removeAttribute("src");
+        image.hidden = true;
+        byId("plot-placeholder").hidden = false;
+    }
+    renderCurveList();
+    renderPlotTabs();
+    setMessage("plot-message", graph.image ? "Открыт сохранённый график" : "Новый график — добавьте кривые", "");
+}
+
+function addPlotGraph() {
+    saveActivePlotGraph();
+    const id = nextPlotGraphId++;
+    plotGraphs.push({id, title: "График " + id, curves: [], image: null});
+    activatePlotGraph(id);
+}
+
+function removePlotGraph(id) {
+    if (plotGraphs.length <= 1) return;
+    saveActivePlotGraph();
+    const index = plotGraphs.findIndex(graph => graph.id === id);
+    if (index < 0) return;
+    plotGraphs.splice(index, 1);
+    if (activePlotGraphId === id) {
+        const next = plotGraphs[Math.min(index, plotGraphs.length - 1)];
+        activePlotGraphId = next.id;
+        plotCurves = next.curves;
+        byId("plot-title").value = next.title;
+        const image = byId("plot-image");
+        if (next.image) {
+            image.src = next.image;
+            image.hidden = false;
+            byId("plot-placeholder").hidden = true;
+        } else {
+            image.removeAttribute("src");
+            image.hidden = true;
+            byId("plot-placeholder").hidden = false;
+        }
+        renderCurveList();
+    }
+    renderPlotTabs();
+}
+
 function renderCurveList() {
     const container = byId("plot-curves-list");
     container.replaceChildren();
@@ -729,7 +832,7 @@ async function renderPlot() {
         return;
     }
 
-    const title = byId("plot-title").value.trim() || null;
+    const title = byId("plot-title").value.trim() || getActivePlotGraph().title;
 
     try {
         const arrayCurves = plotCurves.every(curve => curve.source === "array");
@@ -753,6 +856,11 @@ async function renderPlot() {
         byId("plot-image").src = response.image;
         byId("plot-image").hidden = false;
         byId("plot-placeholder").hidden = true;
+        const graph = getActivePlotGraph();
+        graph.title = title;
+        graph.image = response.image;
+        graph.curves = plotCurves;
+        renderPlotTabs();
         setMessage(
             "plot-message",
             `Построено кривых: ${response.curve_count}`,
@@ -799,6 +907,15 @@ byId("plot-dataset").addEventListener("change", updatePlotColumns);
 byId("add-plot-curve").addEventListener("click", addPlotCurve);
 byId("add-array-curve").addEventListener("click", addArrayPlotCurve);
 byId("render-plot").addEventListener("click", renderPlot);
+byId("add-plot-tab").addEventListener("click", addPlotGraph);
+byId("plot-title").addEventListener("input", () => {
+    const graph = getActivePlotGraph();
+    if (graph) {
+        graph.title = byId("plot-title").value.trim() || ("График " + graph.id);
+        renderPlotTabs();
+    }
+});
+renderPlotTabs();
 byId("table-dataset").addEventListener("change", refreshTable);
 byId("refresh-table").addEventListener("click", refreshTable);
 
