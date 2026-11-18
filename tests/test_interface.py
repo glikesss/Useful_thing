@@ -279,3 +279,26 @@ def test_bridge_rejects_empty_curve_list():
     response = bridge.render_plot_curves([])
 
     assert response["ok"] is False
+
+
+
+def test_bridge_applies_savgol_smoothing(tmp_path):
+    path = tmp_path / "signal.csv"
+    path.write_text(
+        "time,value\n0,1\n1,4\n2,9\n3,16\n4,25\n5,36\n6,49\n",
+        encoding="utf-8",
+    )
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "signal")
+
+    response = bridge.process_dataset(
+        "signal",
+        "smooth",
+        "value",
+        {"window": 5, "method": "savgol", "polyorder": 2},
+    )
+
+    assert response["ok"] is True
+    assert response["dataset_name"] == "signal_smooth"
+    smoothed = bridge.data_manager.get_data("signal_smooth")["value_smoothed"]
+    assert smoothed.tolist() == pytest.approx([1, 4, 9, 16, 25, 36, 49])
