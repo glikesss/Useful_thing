@@ -568,6 +568,36 @@ footer {
 .plot-panel { grid-area: plot; grid-column: auto; min-width: 0; }
 .table-panel { grid-area: table; grid-column: auto; }
 .plot-container { min-height: 360px; }
+.plot-approximation-results {
+    margin-top: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-soft);
+    border-radius: 9px;
+    background: rgba(12, 23, 41, .38);
+}
+.plot-approximation-results[hidden] { display: none; }
+.plot-approximation-results .subsection-title { margin-bottom: 8px; }
+.plot-approximation-item {
+    display: grid;
+    grid-template-columns: minmax(100px, .7fr) minmax(0, 2fr) auto;
+    align-items: center;
+    gap: 8px 14px;
+    padding: 8px 0;
+    border-top: 1px solid var(--border-soft);
+}
+.plot-approximation-label, .plot-approximation-score {
+    color: var(--muted);
+    font-size: 12px;
+}
+.plot-approximation-formula {
+    color: var(--text);
+    font-size: 13px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+@media (max-width: 620px) {
+    .plot-approximation-item { grid-template-columns: 1fr; gap: 5px; }
+}
 .legend-controls {
     display: flex;
     flex-wrap: wrap;
