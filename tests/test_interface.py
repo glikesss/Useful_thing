@@ -32,6 +32,27 @@ def test_bridge_sets_formulas():
     assert "f" in response["state"]["functions"]
 
 
+def test_bridge_previews_formula_without_applying_it():
+    bridge = MathLabBridge()
+    bridge.set_lines(["a = 2"])
+
+    response = bridge.preview_formula("f(x) = a*x + 1")
+
+    assert response["ok"] is True
+    assert "<math" in response["mathml"]
+    assert bridge.get_state()["lines"] == ["a = 2"]
+    assert bridge.get_state()["functions"] == []
+
+
+def test_bridge_formula_preview_reports_incomplete_expression():
+    bridge = MathLabBridge()
+
+    response = bridge.preview_formula("f(x) = (")
+
+    assert response["ok"] is False
+    assert response["error"]
+
+
 def test_bridge_evaluates_expression():
     bridge = MathLabBridge()
     bridge.set_lines(["a = 2"])
