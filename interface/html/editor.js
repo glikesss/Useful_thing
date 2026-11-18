@@ -717,8 +717,23 @@ async function applyFormulas(automatic = false) {
             if (!result) continue;
 
             if (isDefinitionLine(lines[i])) {
-                result.hidden = true;
-                result.textContent = "";
+                const name = lines[i].match(/^\\s*([A-Za-z_]\\w*)\\s*=/)?.[1];
+                const variable = currentState?.variables?.find(item => item.name === name);
+                const preview = variable?.array_preview;
+                if (preview) {
+                    const values = preview.values.map(value =>
+                        typeof value === "number" ? Number(value.toPrecision(6)).toString() : String(value)
+                    );
+                    const suffix = preview.size > preview.values.length ? ", …" : "";
+                    const shape = preview.shape.join(" × ");
+                    result.textContent = `[ ${values.join(", ")}${suffix} ] · ${preview.size} элементов · ${shape}`;
+                    result.hidden = false;
+                    result.classList.add("array-preview");
+                } else {
+                    result.hidden = true;
+                    result.textContent = "";
+                    result.classList.remove("array-preview");
+                }
                 result.closest(".formula-row")?.classList.remove("has-error");
                 continue;
             }
