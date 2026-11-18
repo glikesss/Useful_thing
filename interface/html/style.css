@@ -117,8 +117,8 @@ input::placeholder, textarea::placeholder { color: #60738e; }
 .message.success { color: var(--success); }
 .subsection { margin-top: 24px; padding-top: 19px; border-top: 1px solid var(--border-soft); }
 .subsection-title { margin-bottom: 11px; }
-.data-list, .dataset-list { display: grid; gap: 8px; }
-.data-item, .dataset-item {
+.data-list { display: grid; gap: 8px; }
+.data-item {
     display: flex; justify-content: space-between; align-items: center; gap: 12px;
     padding: 10px 12px; border: 1px solid var(--border-soft);
     border-radius: 9px; background: rgba(23, 39, 62, .72); font-size: 12px;
@@ -131,7 +131,42 @@ input::placeholder, textarea::placeholder { color: #60738e; }
 .result-block { margin-top: 17px; padding: 14px 15px; background: var(--surface-input); border: 1px solid var(--border-soft); border-radius: 10px; }
 pre { margin: 0; color: #9fe0bd; font: 13px/1.65 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .data-panel .input-row { margin: 16px 0; }
-.dataset-list { margin-top: 9px; }
+ 
+.dataset-list {
+    display: block;
+    margin-top: 9px;
+    max-height: 176px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 10px;
+    border: 1px solid #263b57;
+    border-radius: 8px;
+    background: #0a1424;
+    color: #9fb4d0;
+    font: 12px/1.55 Consolas, "Cascadia Code", monospace;
+    scrollbar-width: thin;
+    scrollbar-color: #405b7d #0a1424;
+}
+.dataset-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+    padding: 5px 2px;
+    border: 0;
+    border-bottom: 1px solid rgba(116, 145, 184, .13);
+    border-radius: 0;
+    background: transparent;
+    font: inherit;
+}
+.dataset-item:last-child { border-bottom: 0; }
+.dataset-item > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+.dataset-meta { color: #647d9d; font: 10px/1.4 Consolas, monospace; }
+.dataset-actions { flex: 0 0 auto; }
+.dataset-list::-webkit-scrollbar { width: 7px; }
+.dataset-list::-webkit-scrollbar-track { background: #0a1424; }
+.dataset-list::-webkit-scrollbar-thumb { background: #405b7d; border-radius: 8px; }
 .dataset-meta { color: var(--muted-dim); font-size: 10px; margin-top: 4px; }
 .dataset-actions { display: flex; gap: 6px; }
 .dataset-remove {
@@ -194,33 +229,33 @@ pre { margin: 0; color: #9fe0bd; font: 13px/1.65 Consolas, monospace; white-spac
 .plot-button { height: 41px; }
 .curve-toolbar { display: grid; gap: 11px; margin: 12px 0 16px; }
 .curve-list {
-    display: flex;
-    flex-direction: column;
-    flex-wrap: nowrap;
-    gap: 5px;
-    max-height: 190px;
+    display: block;
+    max-height: 176px;
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 2px 7px 2px 2px;
+    padding: 8px 10px;
+    border: 1px solid #263b57;
+    border-radius: 8px;
+    background: #0a1424;
+    color: #b8c9df;
+    font: 12px/1.55 Consolas, "Cascadia Code", monospace;
     scrollbar-width: thin;
-    scrollbar-color: #405b7d #111d2e;
+    scrollbar-color: #405b7d #0a1424;
 }
 .curve-item {
     display: flex;
-    flex: 0 0 auto;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    width: 100%;
     min-width: 0;
-    padding: 6px 8px;
-    color: #c8d7eb;
-    background: #172b43;
-    border: 1px solid #34506f;
-    border-radius: 7px;
-    font-size: 11px;
+    padding: 5px 2px;
+    border-bottom: 1px solid rgba(116, 145, 184, .13);
+    color: inherit;
+    background: transparent;
+    font: inherit;
 }
+.curve-item:last-child { border-bottom: 0; }
 .curve-item span {
     flex: 1 1 auto;
     min-width: 0;
@@ -385,7 +420,7 @@ footer {
 .dataset-item { min-width: 0; }
 .dataset-item > div:first-child { min-width: 0; overflow-wrap: anywhere; }
 
-.curve-list::-webkit-scrollbar { width: 7px; }
-.curve-list::-webkit-scrollbar-track { background: #111d2e; border-radius: 8px; }
+ .curve-list::-webkit-scrollbar { width: 7px; }
+.curve-list::-webkit-scrollbar-track { background: #0a1424; border-radius: 8px; }
 .curve-list::-webkit-scrollbar-thumb { background: #405b7d; border-radius: 8px; }
 .curve-list::-webkit-scrollbar-thumb:hover { background: #58769c; }
