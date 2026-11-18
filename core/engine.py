@@ -12,7 +12,7 @@ def _expression_symbols(expression):
         for item in expression:
             result.update(_expression_symbols(item))
         return result
-    return set(_expression_symbols(expression)) if isinstance(expression, sp.Basic) else set()
+    return set(expression.free_symbols) if isinstance(expression, sp.Basic) else set()
 
 
 def _substitute_expression(expression, substitutions):
