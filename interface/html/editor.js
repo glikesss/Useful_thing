@@ -96,6 +96,7 @@ function renderFormulaEditor(lines = [], formulas = []) {
         input.className = "formula-row-input";
         input.setAttribute("aria-label", "Формула " + (index + 1));
         input.setAttribute("math-virtual-keyboard-policy", "manual");
+        input.setAttribute("inputmode", "none");
         input.setAttribute("smart-mode", "");
         input.setAttribute("placeholder", "Введите формулу…");
         input.addEventListener("focus", () => { activeFormulaInput = input; });
@@ -1199,10 +1200,13 @@ function initializePlotGestures() {
     const pointers = new Map();
     let gesture = null;
     let lastTap = 0;
+    let tapCandidate = false;
 
     surface.addEventListener("pointerdown", event => {
         if (image.hidden) return;
         surface.setPointerCapture(event.pointerId);
+        if (pointers.size === 0) tapCandidate = true;
+        else tapCandidate = false;
         pointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
         if (pointers.size === 1) {
             gesture = {kind: "pan", x: event.clientX, y: event.clientY,
@@ -1222,6 +1226,8 @@ function initializePlotGestures() {
 
     surface.addEventListener("pointermove", event => {
         if (!pointers.has(event.pointerId) || !gesture) return;
+        const previous = pointers.get(event.pointerId);
+        if (Math.hypot(event.clientX - previous.x, event.clientY - previous.y) > 8) tapCandidate = false;
         pointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
         if (gesture.kind === "pan" && pointers.size === 1) {
             plotViewport.x = gesture.originX + event.clientX - gesture.x;
@@ -1241,6 +1247,7 @@ function initializePlotGestures() {
 
     const finish = event => {
         if (!pointers.has(event.pointerId)) return;
+        const isTap = tapCandidate && pointers.size === 1;
         pointers.delete(event.pointerId);
         if (pointers.size === 1) {
             const remaining = [...pointers.values()][0];
@@ -1249,9 +1256,12 @@ function initializePlotGestures() {
         } else {
             gesture = null;
         }
-        const now = Date.now();
-        if (now - lastTap < 320) resetPlotViewport();
-        lastTap = now;
+        if (isTap) {
+            const now = Date.now();
+            if (now - lastTap < 320) resetPlotViewport();
+            lastTap = now;
+        }
+        if (pointers.size === 0) tapCandidate = false;
     };
     surface.addEventListener("pointerup", finish);
     surface.addEventListener("pointercancel", finish);
