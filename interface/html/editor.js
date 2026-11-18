@@ -73,7 +73,7 @@ function formulaMathToSource(mathfield) {
         : mathfield.value.trim();
 
     // Keep named data-access functions as ordinary engine identifiers.
-    source = source.replace(/\\\\(?:operatorname|mathrm|text)\\s*\\{\\s*file\\s*\\}/g, "file");
+    source = source.replace(/\\(?:operatorname|mathrm|text)\s*\{\s*file\s*\}/g, "file");
     return source;
 }
 
