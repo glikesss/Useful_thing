@@ -10,7 +10,7 @@ import pandas as pd
 from core import MathEngine
 from data import DataManager, load_csv_file
 from data.csv_loader import save_csv_file
-from data.processing import derivative, integrate, smooth, statistics
+from data.processing import derivative, filter_rows, integrate, smooth, statistics
 from plotting import PlotManager
 
 
@@ -267,6 +267,8 @@ class MathLabBridge:
             window = options.get("window", 3)
             method = options.get("method", "moving_average")
             polyorder = options.get("polyorder", 2)
+            minimum = options.get("minimum")
+            maximum = options.get("maximum")
             if not isinstance(name, str) or not name.strip():
                 raise ValueError("Не выбран набор данных")
             with self._lock:
@@ -278,6 +280,17 @@ class MathLabBridge:
                 result = smooth(frame, column, window=window, method=method, polyorder=polyorder)
                 base_name = f"{name}_smooth"
                 result_label = "Сглаживание"
+            elif operation == "filter":
+                if not column:
+                    raise ValueError("Выберите столбец для фильтрации")
+                result = filter_rows(
+                    frame,
+                    column,
+                    minimum=minimum,
+                    maximum=maximum,
+                )
+                base_name = f"{name}_filtered"
+                result_label = "Фильтрация"
             elif operation == "derivative":
                 if not column:
                     raise ValueError("Выберите столбец Y")
