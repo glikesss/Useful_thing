@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 from io import BytesIO
 from pathlib import Path
 from threading import RLock
@@ -44,6 +44,18 @@ class MathLabBridge:
 
         return str(value)
 
+    @staticmethod
+    def _is_numeric_column(series):
+        values = series.dropna().astype("string").str.strip()
+        values = values[values != ""]
+
+        if values.empty:
+            return False
+
+        values = values.str.replace(",", ".", regex=False)
+        numeric = pd.to_numeric(values, errors="coerce")
+        return numeric.notna().sum() >= max(1, int(len(values) * 0.9))
+
     def _dataset_info(self, name):
         frame = self.data_manager.get_data(name, copy=False)
         return {
@@ -52,7 +64,8 @@ class MathLabBridge:
             "columns": [str(column) for column in frame.columns],
             "numeric_columns": [
                 str(column)
-                for column in frame.select_dtypes(include="number").columns
+                for column in frame.columns
+                if self._is_numeric_column(frame[column])
             ],
         }
 
@@ -285,3 +298,5 @@ class MathLabBridge:
             }],
             title,
         )
+
+

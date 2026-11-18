@@ -113,3 +113,17 @@ def test_processing_rejects_non_dataframe():
     with pytest.raises(TypeError):
         drop_missing([1, 2, 3])
 
+import pandas as pd
+import pytest
+from data.processing import smooth
+
+def test_smooth_allows_nan():
+    df = pd.DataFrame({"y": [1.0, float("nan"), 3.0]})
+    result = smooth(df, "y")
+    assert result["y_smoothed"].tolist() == [1.0, 2.0, 3.0]
+
+@pytest.mark.parametrize("value", [float("inf"), float("-inf")])
+def test_smooth_rejects_infinity(value):
+    df = pd.DataFrame({"y": [1.0, value, 3.0]})
+    with pytest.raises(ValueError, match="finite"):
+        smooth(df, "y")

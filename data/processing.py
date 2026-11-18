@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 import pandas as pd
 from scipy.integrate import trapezoid
 
@@ -53,6 +53,10 @@ def smooth(data, column, *, window=3, result_column=None):
 
     if not isinstance(window, int) or isinstance(window, bool) or window < 1:
         raise ValueError("window must be a positive integer")
+
+    values = pd.to_numeric(data[column], errors="raise")
+    if np.isinf(values.to_numpy(dtype=float, na_value=np.nan)).any():
+        raise ValueError("Input column must not contain infinite values")
 
     result = data.copy()
     output_column = result_column or f"{column}_smoothed"

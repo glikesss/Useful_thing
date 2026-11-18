@@ -1,4 +1,4 @@
-﻿import csv
+import csv
 from os import PathLike
 from pathlib import Path
 
@@ -16,11 +16,14 @@ def load_csv_file(path, **kwargs):
         raise IsADirectoryError(path)
 
     try:
-        if "sep" not in kwargs and "delimiter" not in kwargs:
-            with path.open("r", encoding=kwargs.get("encoding", "utf-8-sig"),
-                           newline="") as file:
-                sample = file.read(65536)
+        with path.open(
+            "r",
+            encoding=kwargs.get("encoding", "utf-8-sig"),
+            newline="",
+        ) as file:
+            sample = file.read(65536)
 
+        if "sep" not in kwargs and "delimiter" not in kwargs:
             try:
                 dialect = csv.Sniffer().sniff(
                     sample,
@@ -30,7 +33,44 @@ def load_csv_file(path, **kwargs):
             except csv.Error:
                 kwargs["sep"] = ","
 
-        return pd.read_csv(path, **kwargs)
+        separator = kwargs.get("sep", kwargs.get("delimiter", ","))
+        if (
+            "decimal" not in kwargs
+            and separator != ","
+            and __import__("re").search(
+                r"(?<![\w])[-+]?\d+,\d+(?:[eE][-+]?\d+)?",
+                sample,
+            )
+        ):
+            kwargs["decimal"] = ","
+
+        frame = pd.read_csv(path, **kwargs)
+        for column in frame.select_dtypes(include=["object", "string"]).columns:
+            frame[column] = frame[column].str.strip()
+
+        if kwargs.get("header", "infer") == "infer" and "names" not in kwargs and not frame.empty:
+            units = frame.iloc[0].astype("string").str.strip()
+            if units.notna().all() and units.str.fullmatch(r"\([^()]+\)").all():
+                frame.columns = [
+                    f"{column} {unit}"
+                    for column, unit in zip(frame.columns, units)
+                ]
+                frame = frame.iloc[1:].reset_index(drop=True)
+
+        for column in frame.columns:
+            values = frame[column].astype("string").str.strip()
+            normalized = (
+                values.str.replace(",", ".", regex=False)
+                if kwargs.get("decimal") == ","
+                else values
+            )
+            converted = pd.to_numeric(normalized, errors="coerce")
+            non_empty = values.notna() & values.ne("")
+
+            if non_empty.any() and converted[non_empty].notna().all():
+                frame[column] = converted
+
+        return frame
 
     except pd.errors.EmptyDataError as exc:
         raise ValueError(f"CSV file is empty: {path}") from exc
@@ -69,3 +109,33 @@ def merge_csv_files(paths, output_path, *, index=False, **kwargs):
     result = load_csv_files(paths, **kwargs)
     result.to_csv(output_path, index=index)
     return result
+
+
+def save_csv_file(
+    data,
+    output_path,
+    *,
+    sep=",",
+    decimal=".",
+    index=False,
+    encoding="utf-8-sig",
+):
+    """Save a DataFrame to CSV with configurable formatting."""
+    if not isinstance(data, pd.DataFrame):
+        raise TypeError("data must be a pandas DataFrame")
+
+    if len(sep) != 1 or len(decimal) != 1:
+        raise ValueError("sep and decimal must be single characters")
+
+    if sep == decimal:
+        raise ValueError("sep and decimal must be different")
+
+    output_path = Path(output_path)
+    data.to_csv(
+        output_path,
+        sep=sep,
+        decimal=decimal,
+        index=index,
+        encoding=encoding,
+    )
+    return output_path

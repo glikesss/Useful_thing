@@ -32,13 +32,20 @@ class Curve:
         self.style = dict(self.style)
 
     def get_values(self):
-        x = pd.to_numeric(
-            self.data[self.x_column], errors="raise"
-        ).to_numpy(dtype=float)
+        def convert(column):
+            values = (
+                self.data[column]
+                .astype("string")
+                .str.strip()
+                .str.replace(",", ".", regex=False)
+                .replace("", pd.NA)
+            )
+            return pd.to_numeric(
+                values, errors="raise"
+            ).to_numpy(dtype=float, na_value=float("nan"))
 
-        y = pd.to_numeric(
-            self.data[self.y_column], errors="raise"
-        ).to_numpy(dtype=float)
+        x = convert(self.x_column)
+        y = convert(self.y_column)
 
         return x, y
 
@@ -50,3 +57,4 @@ class Curve:
             kwargs.setdefault("label", self.label)
 
         return axes.plot(x, y, **kwargs)[0]
+
