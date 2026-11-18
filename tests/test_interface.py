@@ -618,7 +618,7 @@ def test_bridge_exports_rendered_plot_with_matplotlib_savefig(tmp_path, monkeypa
 
 def test_bridge_returns_approximation_formula_for_plot(tmp_path):
     path = tmp_path / "linear.csv"
-    path.write_text("x,y\\n0,1\\n1,3\\n2,5\\n", encoding="utf-8")
+    path.write_text("x,y\n0,1\n1,3\n2,5\n", encoding="utf-8")
     bridge = MathLabBridge()
     bridge.load_csv(path, "linear")
 
