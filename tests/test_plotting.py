@@ -1,4 +1,4 @@
-﻿import matplotlib
+import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
@@ -19,6 +19,20 @@ def test_curve_creation():
     assert x.tolist() == [0, 1, 2]
     assert y.tolist() == [2, 4, 6]
     assert curve.label == "Measurement"
+
+
+def test_curve_parses_localized_infinity_values():
+    data = pd.DataFrame({
+        "x": ["-бесконечность", "0", "бесконечность"],
+        "y": [1, 2, 3],
+    })
+
+    x, y = Curve(data, "x", "y").get_values()
+
+    assert x[0] == float("-inf")
+    assert x[1] == 0
+    assert x[2] == float("inf")
+    assert y.tolist() == [1, 2, 3]
 
 
 def test_curve_copies_source_data():
