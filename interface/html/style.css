@@ -521,3 +521,46 @@ footer {
     .appearance-control { flex: 1; }
     .appearance-control select { flex: 1; min-width: 0; }
 }
+
+
+/* Requested five-panel workspace: 01 / 03 on the left, 04 on the right, 05 below */
+.workspace {
+    grid-template-columns: minmax(300px, .82fr) minmax(0, 1.55fr);
+    grid-template-areas:
+        "formula plot"
+        "data plot"
+        "table table";
+    align-items: stretch;
+}
+.formula-panel { grid-area: formula; grid-row: auto; }
+.right-column { display: contents; }
+.data-panel { grid-area: data; }
+.plot-panel { grid-area: plot; grid-column: auto; min-width: 0; }
+.table-panel { grid-area: table; grid-column: auto; }
+.plot-container { min-height: 360px; }
+.legend-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 14px 22px;
+    margin: 12px 0 14px;
+    padding: 11px 13px;
+    border: 1px solid var(--border-soft);
+    border-radius: 9px;
+    background: rgba(12, 23, 41, .48);
+}
+.legend-controls label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; }
+.legend-controls .legend-toggle { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.legend-toggle input { width: 15px; min-height: 15px; accent-color: var(--accent-strong); }
+.legend-controls select { min-width: 175px; width: auto; min-height: 36px; }
+@media (max-width: 1080px) {
+    .workspace {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "formula" "plot" "data" "table";
+    }
+    .right-column { display: contents; }
+}
+@media (max-width: 620px) {
+    .legend-controls { align-items: stretch; flex-direction: column; }
+    .legend-controls select { width: 100%; }
+}
