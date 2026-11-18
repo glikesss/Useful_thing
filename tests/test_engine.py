@@ -159,3 +159,12 @@ def test_array_scalar_broadcasting():
     engine = MathEngine()
     engine.set_lines(["a = [1, 2, 3]"])
     assert np.array_equal(engine.evaluate("a * 3 + 1"), np.array([4, 7, 10]))
+
+
+def test_user_function_accepts_array_literal_in_expression():
+    engine = MathEngine()
+    engine.set_lines(["f(x) = x^2 + 1"])
+    assert np.array_equal(
+        engine.evaluate("f([1, 2, 3])"),
+        np.array([2, 5, 10]),
+    )
