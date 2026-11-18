@@ -98,10 +98,13 @@ function renderFormulaEditor(lines = [], formulas = []) {
         input.addEventListener("input", () => scheduleFormulaApply());
         input.addEventListener("keydown", event => {
             if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                // Always consume vertical navigation, including at the first/last row,
+                // to prevent the embedded webview's boundary key sound.
+                event.preventDefault();
+                event.stopPropagation();
                 const targetIndex = index + (event.key === "ArrowUp" ? -1 : 1);
                 const target = container.children[targetIndex]?.querySelector(".formula-row-input");
                 if (target) {
-                    event.preventDefault();
                     target.focus();
                     target.executeCommand(event.key === "ArrowUp"
                         ? "moveToMathfieldEnd"
@@ -593,11 +596,16 @@ function renderDatasets(datasets) {
     addOption(plotSelect, "", "Выберите набор");
     addOption(tableSelect, "", "Выберите набор");
 
-    for (const dataset of datasets) {
+    datasets.forEach((dataset, index) => {
         const item = document.createElement("div");
         item.className = "dataset-item";
 
+        const number = document.createElement("span");
+        number.className = "dataset-number";
+        number.textContent = String(index + 1).padStart(2, "0");
+
         const details = document.createElement("div");
+        details.className = "dataset-item-details";
         const name = document.createElement("div");
         name.textContent = dataset.name;
 
@@ -622,12 +630,12 @@ function renderDatasets(datasets) {
         remove.addEventListener("click", () => removeDataset(dataset.name));
 
         actions.append(exportButton, remove);
-        item.append(details, actions);
+        item.append(number, details, actions);
         container.appendChild(item);
 
         addOption(plotSelect, dataset.name, dataset.name);
         addOption(tableSelect, dataset.name, dataset.name);
-    }
+    });
 
     plotSelect.value = datasets.some(item => item.name === previousPlot)
         ? previousPlot
