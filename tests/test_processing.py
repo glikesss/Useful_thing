@@ -74,6 +74,38 @@ def test_derivative():
     np.testing.assert_allclose(result["d_position_d_time"], [2, 2, 2, 2])
 
 
+def test_derivative_uses_adjacent_rows_and_preserves_scale():
+    data = pd.DataFrame({
+        "time": [0.0, 1.0, 2.0, 3.0],
+        "signal": [0.0, 2.0, 6.0, 12.0],
+    })
+
+    result = derivative(data, "signal", x_column="time")
+
+    np.testing.assert_allclose(
+        result["d_signal_d_time"],
+        [2.0, 4.0, 6.0, 6.0],
+    )
+
+
+def test_derivative_uses_actual_nonuniform_x_spacing():
+    data = pd.DataFrame({
+        "time": [0.0, 2.0, 5.0],
+        "signal": [0.0, 8.0, 23.0],
+    })
+
+    result = derivative(data, "signal", x_column="time")
+
+    np.testing.assert_allclose(result["d_signal_d_time"], [4.0, 5.0, 5.0])
+
+
+def test_derivative_rejects_non_increasing_x():
+    data = pd.DataFrame({"time": [0.0, 2.0, 1.0], "signal": [0.0, 4.0, 3.0]})
+
+    with pytest.raises(ValueError, match="strictly increasing"):
+        derivative(data, "signal", x_column="time")
+
+
 def test_derivative_rejects_single_point():
     with pytest.raises(ValueError):
         derivative(pd.DataFrame({"x": [1]}), "x")
