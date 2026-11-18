@@ -952,6 +952,7 @@ async function exportPlot(fileFormat) {
             byId("plot-legend-visible").checked,
             byId("plot-legend-position").value,
             getPlotSmoothing(),
+            getPlotApproximation(),
         );
         if (response.cancelled) return;
         if (!response.ok) {
@@ -1039,6 +1040,7 @@ async function renderPlot() {
                 legendVisible,
                 legendPosition,
                 getPlotSmoothing(),
+                getPlotApproximation(),
             )
             : await api.render_plot_curves(
                 plotCurves,
@@ -1046,6 +1048,7 @@ async function renderPlot() {
                 legendVisible,
                 legendPosition,
                 getPlotSmoothing(),
+                getPlotApproximation(),
             );
 
         if (!response.ok) {
@@ -1080,6 +1083,21 @@ function getPlotSmoothing() {
         window: Number.parseInt(byId("plot-smoothing-window").value, 10) || 5,
         polyorder: 2,
     };
+}
+
+function getPlotApproximation() {
+    return {
+        enabled: byId("plot-approximation-enabled").checked,
+        model: byId("plot-approximation-model").value,
+        degree: Number.parseInt(byId("plot-approximation-degree").value, 10) || 2,
+    };
+}
+
+function updatePlotApproximationControls() {
+    const enabled = byId("plot-approximation-enabled").checked;
+    const model = byId("plot-approximation-model");
+    model.disabled = !enabled;
+    byId("plot-approximation-degree").disabled = !enabled || model.value !== "polynomial";
 }
 
 function updatePlotSmoothingControls() {
@@ -1124,6 +1142,19 @@ byId("plot-dataset").addEventListener("change", updatePlotColumns);
 byId("add-plot-curve").addEventListener("click", addPlotCurve);
 byId("add-array-curve").addEventListener("click", addArrayPlotCurve);
 byId("render-plot").addEventListener("click", renderPlot);
+byId("plot-approximation-enabled").addEventListener("change", () => {
+    updatePlotApproximationControls();
+    if (plotCurves.length) renderPlot();
+});
+byId("plot-approximation-model").addEventListener("change", () => {
+    updatePlotApproximationControls();
+    if (plotCurves.length && byId("plot-approximation-enabled").checked) renderPlot();
+});
+byId("plot-approximation-degree").addEventListener("change", () => {
+    const input = byId("plot-approximation-degree");
+    input.value = String(Math.min(12, Math.max(2, Number(input.value) || 2)));
+    if (plotCurves.length && byId("plot-approximation-enabled").checked) renderPlot();
+});
 byId("plot-smoothing-enabled").addEventListener("change", () => {
     updatePlotSmoothingControls();
     if (plotCurves.length) renderPlot();
