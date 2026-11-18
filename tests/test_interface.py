@@ -218,7 +218,7 @@ def test_bridge_renders_multiple_curves(tmp_path):
 
 def test_bridge_processes_dataset_without_modifying_source(tmp_path):
     path = tmp_path / "signal.csv"
-    path.write_text("time,value\\n0,0\\n1,2\\n2,4\\n", encoding="utf-8")
+    path.write_text("time,value\n0,0\n1,2\n2,4\n", encoding="utf-8")
     bridge = MathLabBridge()
     bridge.load_csv(path, "signal")
 
@@ -235,7 +235,7 @@ def test_bridge_processes_dataset_without_modifying_source(tmp_path):
 
 def test_bridge_integrates_dataset(tmp_path):
     path = tmp_path / "signal.csv"
-    path.write_text("time,value\\n0,0\\n1,2\\n2,4\\n", encoding="utf-8")
+    path.write_text("time,value\n0,0\n1,2\n2,4\n", encoding="utf-8")
     bridge = MathLabBridge()
     bridge.load_csv(path, "signal")
 
@@ -249,7 +249,7 @@ def test_bridge_integrates_dataset(tmp_path):
 
 def test_bridge_calculates_statistics(tmp_path):
     path = tmp_path / "signal.csv"
-    path.write_text("time,value\\n0,1\\n1,3\\n", encoding="utf-8")
+    path.write_text("time,value\n0,1\n1,3\n", encoding="utf-8")
     bridge = MathLabBridge()
     bridge.load_csv(path, "signal")
 
