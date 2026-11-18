@@ -202,6 +202,36 @@ class MathLabBridge:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def load_csv_files(self, paths, name=None):
+        """Load several CSV files, assigning unique dataset names automatically."""
+        if not isinstance(paths, (list, tuple)) or not paths:
+            return {"ok": False, "error": "Не выбраны CSV-файлы"}
+
+        loaded = []
+        errors = []
+        for raw_path in paths:
+            path = Path(raw_path)
+            base_name = (name.strip() if name and len(paths) == 1 else path.stem) or "dataset"
+            dataset_name = base_name
+            suffix = 2
+            while dataset_name in self.data_manager:
+                dataset_name = base_name + "_" + str(suffix)
+                suffix += 1
+            response = self.load_csv(str(path), dataset_name)
+            if response.get("ok"):
+                loaded.append(path.name)
+            else:
+                errors.append(path.name + ": " + response.get("error", "ошибка загрузки"))
+
+        if not loaded:
+            return {"ok": False, "error": "\\n".join(errors) or "Не удалось загрузить файлы"}
+        with self._lock:
+            state = self._build_state()
+        message = "Загружено файлов: " + str(len(loaded))
+        if errors:
+            message += "; с ошибками: " + str(len(errors))
+        return {"ok": True, "state": state, "message": message, "loaded": loaded, "errors": errors}
+
     def select_csv_file(self, name=None):
         try:
             if self._window is None:
@@ -215,12 +245,12 @@ class MathLabBridge:
             )
             selected = self._window.create_file_dialog(
                 dialog_type,
-                allow_multiple=False,
+                allow_multiple=True,
                 file_types=("CSV files (*.csv)", "All files (*.*)"),
             )
             if not selected:
                 return {"ok": False, "cancelled": True}
-            return self.load_csv(selected[0], name)
+            return self.load_csv_files(selected, name)
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
