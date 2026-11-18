@@ -127,7 +127,7 @@ function updateArrayImportControls() {
     addOption(columnSelect, "", "Выберите столбец");
     for (const column of selected.numeric_columns) addOption(columnSelect, column, column);
     columnSelect.disabled = false;
-    byId("import-column-array").disabled = !columnSelect.value;
+    byId("import-column-array").disabled = true;
 }
 
 function updateArrayImportColumns() {
