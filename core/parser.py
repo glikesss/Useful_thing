@@ -174,6 +174,7 @@ class ExpressionParser:
 
     def parse_expression(self, source, local_symbols=None):
         source = source.replace("^", "**")
+        source = self._insert_implicit_multiplication(source)
 
         try:
             tree = ast.parse(source, mode="eval")
@@ -191,6 +192,40 @@ class ExpressionParser:
             raise
         except Exception as exc:
             raise ParseError(str(exc)) from exc
+
+    def _insert_implicit_multiplication(self, source):
+        """Interpret adjacent single-letter symbols as multiplication (e.g. ax -> a*x)."""
+        reserved = (
+            set(BUILTIN_FUNCTIONS)
+            | set(self.functions)
+            | {
+                "pi", "e", "range", "linspace",
+                "derivative", "integral", "cumulative",
+            }
+        )
+        local_names = set()
+
+        # Keep explicitly declared local symbols intact.
+        # Function calls are also preserved, including built-ins.
+        token_pattern = re.compile(r"\\b[A-Za-z]+\\b")
+
+        def expand(match):
+            name = match.group(0)
+            end = match.end()
+            remainder = source[end:].lstrip()
+            is_call = remainder.startswith("(")
+
+            if (
+                len(name) <= 1
+                or name in reserved
+                or is_call
+                or name in local_names
+            ):
+                return name
+
+            return "*".join(name)
+
+        return token_pattern.sub(expand, source)
 
     def register_function(self, definition):
         self.functions[definition.name] = definition
