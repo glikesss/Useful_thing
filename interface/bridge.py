@@ -108,6 +108,10 @@ class MathLabBridge:
             "formulas": formulas,
             "variables": variables,
             "functions": list(self.engine.get_function_names()),
+            "arrays": [
+                name for name in self.engine.get_variable_names()
+                if isinstance(self.engine.get_variable(name), np.ndarray)
+            ],
             "datasets": [
                 self._dataset_info(name)
                 for name in self.data_manager.list_datasets()
