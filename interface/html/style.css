@@ -152,7 +152,6 @@ pre { margin: 0; color: #9fe0bd; font: 13px/1.65 Consolas, monospace; white-spac
 .dataset-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 10px;
     min-width: 0;
     padding: 5px 2px;
@@ -163,7 +162,14 @@ pre { margin: 0; color: #9fe0bd; font: 13px/1.65 Consolas, monospace; white-spac
     font: inherit;
 }
 .dataset-item:last-child { border-bottom: 0; }
-.dataset-item > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+.dataset-number {
+    flex: 0 0 24px;
+    color: #6f89aa;
+    text-align: right;
+    font: 11px Consolas, monospace;
+    user-select: none;
+}
+.dataset-item-details { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .dataset-meta { color: #647d9d; font: 10px/1.4 Consolas, monospace; }
 .dataset-actions { flex: 0 0 auto; }
 .dataset-list::-webkit-scrollbar { width: 7px; }
