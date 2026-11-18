@@ -278,8 +278,10 @@ class MathLabBridge:
                 result_label = "Сглаживание"
             elif operation == "derivative":
                 if not column:
-                    raise ValueError("Выберите столбец")
-                result = derivative(frame, column, x_column=x_column or None)
+                    raise ValueError("Выберите столбец Y")
+                if not x_column:
+                    raise ValueError("Выберите столбец X")
+                result = derivative(frame, column, x_column=x_column)
                 base_name = f"{name}_derivative"
                 result_label = "Производная"
             elif operation == "integrate":
