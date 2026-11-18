@@ -471,6 +471,44 @@ def test_bridge_exports_full_table_to_excel(tmp_path):
     assert exported.to_dict(orient="list") == {"time": [0, 1], "value": [1.5, 2.5]}
 
 
+@pytest.mark.parametrize("dialog_result_is_list", [False, True])
+def test_table_export_save_dialog_handles_string_and_list_paths(
+    tmp_path, monkeypatch, dialog_result_is_list
+):
+    import sys
+    from types import SimpleNamespace
+
+    source = tmp_path / "source.csv"
+    output = tmp_path / "saved-table.xlsx"
+    source.write_text("time,value\\n0,1.5\\n1,2.5\\n", encoding="utf-8")
+
+    bridge = MathLabBridge()
+    bridge.load_csv(source, "measurement")
+
+    selected = [str(output)] if dialog_result_is_list else str(output)
+
+    class FakeWindow:
+        def create_file_dialog(self, *args, **kwargs):
+            return selected
+
+    bridge._set_window(FakeWindow())
+    monkeypatch.setitem(
+        sys.modules,
+        "webview",
+        SimpleNamespace(FileDialog=SimpleNamespace(SAVE=1)),
+    )
+
+    response = bridge.select_export_table_file("measurement", "xlsx")
+
+    assert response["ok"] is True, response
+    assert output.is_file()
+    exported = pd.read_excel(output)
+    assert exported.to_dict(orient="list") == {
+        "time": [0, 1],
+        "value": [1.5, 2.5],
+    }
+
+
 @pytest.mark.parametrize("file_format", ["png", "pdf"])
 def test_bridge_exports_table_as_image_or_pdf(tmp_path, file_format):
     source = tmp_path / "source.csv"
