@@ -193,3 +193,15 @@ def test_array_index_can_be_a_variable():
     engine = MathEngine()
     engine.set_lines(["a = [10, 20, 30]", "i = 2"])
     assert engine.evaluate("a[i]") == 20
+
+
+def test_array_global_does_not_break_function_compilation():
+    engine = MathEngine()
+    engine.set_lines([
+        "a = [10, 20, 30]",
+        "i = 2",
+        "f(x) = x + 1",
+    ])
+
+    assert engine.evaluate("a[i]") == 20
+    assert engine.call("f", 4) == 5
