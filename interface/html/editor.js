@@ -485,5 +485,6 @@ byId("render-plot").addEventListener("click", renderPlot);
 byId("table-dataset").addEventListener("change", refreshTable);
 byId("refresh-table").addEventListener("click", refreshTable);
 
-document.addEventListener("pywebviewready", initialize);
+window.addEventListener("pywebviewready", initialize);
 if (window.pywebview?.api) initialize();
+

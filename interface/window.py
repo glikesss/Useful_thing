@@ -34,7 +34,7 @@ class MathLabWindow:
 
         self.window = webview.create_window(
             title="MathLab",
-            url=str(html_path),
+            url="interface/html/index.html",
             js_api=self.bridge,
             width=1440,
             height=900,
@@ -45,3 +45,4 @@ class MathLabWindow:
 
         self.bridge._set_window(self.window)
         webview.start(debug=self.debug)
+

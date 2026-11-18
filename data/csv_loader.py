@@ -1,11 +1,12 @@
-﻿from os import PathLike
+﻿import csv
+from os import PathLike
 from pathlib import Path
 
 import pandas as pd
 
 
 def load_csv_file(path, **kwargs):
-    """Load one CSV file into a DataFrame."""
+    """Load one CSV file with automatic delimiter detection."""
     path = Path(path)
 
     if not path.exists():
@@ -15,7 +16,22 @@ def load_csv_file(path, **kwargs):
         raise IsADirectoryError(path)
 
     try:
+        if "sep" not in kwargs and "delimiter" not in kwargs:
+            with path.open("r", encoding=kwargs.get("encoding", "utf-8-sig"),
+                           newline="") as file:
+                sample = file.read(65536)
+
+            try:
+                dialect = csv.Sniffer().sniff(
+                    sample,
+                    delimiters=",;\t|",
+                )
+                kwargs["sep"] = dialect.delimiter
+            except csv.Error:
+                kwargs["sep"] = ","
+
         return pd.read_csv(path, **kwargs)
+
     except pd.errors.EmptyDataError as exc:
         raise ValueError(f"CSV file is empty: {path}") from exc
 
@@ -27,12 +43,7 @@ def load_csv_files(
     sort_columns=False,
     **kwargs,
 ):
-    """
-    Load and vertically concatenate CSV files.
-
-    Columns are aligned by name. Missing values are filled with NaN.
-    CSV files are processed in the order supplied.
-    """
+    """Load and vertically concatenate CSV files."""
     if isinstance(paths, (str, PathLike)):
         paths = [paths]
     else:
