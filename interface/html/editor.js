@@ -103,6 +103,71 @@ function renderFunctions(functions) {
     }
 }
 
+function updateArrayImportControls() {
+    const datasetSelect = byId("array-import-dataset");
+    const columnSelect = byId("array-import-column");
+    const previousDataset = datasetSelect.value;
+    const dataset = currentState?.datasets.find(item => item.name === previousDataset);
+    datasetSelect.replaceChildren();
+    addOption(datasetSelect, "", "Выберите набор");
+    for (const item of currentState?.datasets || []) {
+        addOption(datasetSelect, item.name, item.name);
+    }
+    datasetSelect.value = (currentState?.datasets || []).some(item => item.name === previousDataset)
+        ? previousDataset
+        : (currentState?.datasets?.[0]?.name || "");
+    columnSelect.replaceChildren();
+    const selected = currentState?.datasets.find(item => item.name === datasetSelect.value);
+    if (!selected || !selected.numeric_columns.length) {
+        addOption(columnSelect, "", "Нет числовых столбцов");
+        columnSelect.disabled = true;
+        byId("import-column-array").disabled = true;
+        return;
+    }
+    addOption(columnSelect, "", "Выберите столбец");
+    for (const column of selected.numeric_columns) addOption(columnSelect, column, column);
+    columnSelect.disabled = false;
+    byId("import-column-array").disabled = !columnSelect.value;
+}
+
+function updateArrayImportColumns() {
+    const dataset = currentState?.datasets.find(item => item.name === byId("array-import-dataset").value);
+    const select = byId("array-import-column");
+    select.replaceChildren();
+    if (!dataset || !dataset.numeric_columns.length) {
+        addOption(select, "", "Нет числовых столбцов");
+        select.disabled = true;
+        byId("import-column-array").disabled = true;
+        return;
+    }
+    addOption(select, "", "Выберите столбец");
+    for (const column of dataset.numeric_columns) addOption(select, column, column);
+    select.disabled = false;
+    byId("import-column-array").disabled = true;
+}
+
+async function importColumnArray() {
+    const dataset = byId("array-import-dataset").value;
+    const column = byId("array-import-column").value;
+    const name = byId("array-import-name").value.trim();
+    if (!dataset || !column || !name) {
+        setMessage("array-import-message", "Выберите набор, столбец и задайте имя массива", "error");
+        return;
+    }
+    try {
+        const response = await api.import_column_to_array(dataset, column, name);
+        if (!response.ok) {
+            setMessage("array-import-message", response.error, "error");
+            return;
+        }
+        renderState(response.state);
+        byId("array-import-name").value = "";
+        setMessage("array-import-message", response.message, "success");
+    } catch (error) {
+        setMessage("array-import-message", error.message, "error");
+    }
+}
+
 function updatePlotColumns() {
     const datasetSelect = byId("plot-dataset");
     const xSelect = byId("plot-x");
@@ -466,6 +531,7 @@ function renderState(state, updateEditor = false) {
     renderFunctions(state.functions);
     updatePlotArrays();
     renderDatasets(state.datasets);
+    updateArrayImportControls();
 }
 
 async function refreshState(updateEditor = false) {
@@ -723,6 +789,11 @@ byId("expression-input").addEventListener("keydown", event => {
 });
 
 byId("load-csv").addEventListener("click", loadCsv);
+byId("array-import-dataset").addEventListener("change", updateArrayImportColumns);
+byId("array-import-column").addEventListener("change", () => {
+    byId("import-column-array").disabled = !byId("array-import-column").value;
+});
+byId("import-column-array").addEventListener("click", importColumnArray);
 byId("plot-dataset").addEventListener("change", updatePlotColumns);
 byId("add-plot-curve").addEventListener("click", addPlotCurve);
 byId("add-array-curve").addEventListener("click", addArrayPlotCurve);
