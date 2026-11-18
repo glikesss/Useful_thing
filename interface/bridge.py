@@ -391,7 +391,53 @@ class MathLabBridge:
             return {"ok": False, "error": str(exc)}
 
     @staticmethod
-    def _add_plot_curve(manager, frame, x_column, y_column, label, smoothing=None):
+    def _fit_plot_curve(frame, x_column, y_column, options):
+        """Return sampled approximation points and R-squared for a curve."""
+        if options is None or not isinstance(options, dict):
+            raise TypeError("Параметры аппроксимации должны быть объектом")
+        model = options.get("model", "linear")
+        degree = options.get("degree", 2)
+        x = pd.to_numeric(frame[x_column], errors="coerce").to_numpy(dtype=float)
+        y = pd.to_numeric(frame[y_column], errors="coerce").to_numpy(dtype=float)
+        mask = np.isfinite(x) & np.isfinite(y)
+        x, y = x[mask], y[mask]
+        if len(x) < 2:
+            raise ValueError("Для аппроксимации нужны минимум две числовые точки")
+        if model in ("exponential", "power") and np.any(y <= 0):
+            raise ValueError("Для экспоненциальной и степенной аппроксимации Y должен быть положительным")
+        if model in ("logarithmic", "power") and np.any(x <= 0):
+            raise ValueError("Для логарифмической и степенной аппроксимации X должен быть положительным")
+
+        if model == "linear":
+            coefficients = np.polyfit(x, y, 1)
+            predict = lambda values: np.polyval(coefficients, values)
+        elif model == "polynomial":
+            if not isinstance(degree, int) or isinstance(degree, bool) or degree < 2 or degree >= len(x):
+                raise ValueError("Степень полинома должна быть от 2 до числа точек минус 1")
+            coefficients = np.polyfit(x, y, degree)
+            predict = lambda values: np.polyval(coefficients, values)
+        elif model == "exponential":
+            coefficients = np.polyfit(x, np.log(y), 1)
+            predict = lambda values: np.exp(np.polyval(coefficients, values))
+        elif model == "logarithmic":
+            coefficients = np.polyfit(np.log(x), y, 1)
+            predict = lambda values: np.polyval(coefficients, np.log(values))
+        elif model == "power":
+            coefficients = np.polyfit(np.log(x), np.log(y), 1)
+            predict = lambda values: np.exp(np.polyval(coefficients, np.log(values)))
+        else:
+            raise ValueError("Неизвестный тип аппроксимации")
+
+        predicted = predict(x)
+        residual = float(np.sum((y - predicted) ** 2))
+        total = float(np.sum((y - np.mean(y)) ** 2))
+        r_squared = 1.0 if total == 0 and residual == 0 else (0.0 if total == 0 else 1 - residual / total)
+        x_fit = np.linspace(float(np.min(x)), float(np.max(x)), 300)
+        y_fit = predict(x_fit)
+        return pd.DataFrame({x_column: x_fit, "__mathlab_fit__": y_fit}), r_squared
+
+    @staticmethod
+    def _add_plot_curve(manager, frame, x_column, y_column, label, smoothing=None, approximation=None):
         """Add a curve, optionally smoothing Y without modifying source data."""
         plot_frame = frame
         plot_y = y_column
@@ -407,9 +453,17 @@ class MathLabBridge:
             )
             plot_y = "__mathlab_smoothed__"
         manager.add_curve(plot_frame, x_column, plot_y, label=label)
+        if approximation and approximation.get("enabled"):
+            fit_frame, r_squared = MathLabBridge._fit_plot_curve(
+                plot_frame, x_column, plot_y, approximation
+            )
+            manager.add_curve(
+                fit_frame, x_column, "__mathlab_fit__",
+                label=f"{label} — аппроксимация (R²={r_squared:.4f})",
+            )
 
     def select_export_plot_file(self, title, plot_curves, file_format, source="csv",
-                                 legend_visible=True, legend_position="best", smoothing=None):
+                                 legend_visible=True, legend_position="best", smoothing=None, approximation=None):
         """Export the current plot directly from its Matplotlib Figure."""
         manager = None
         try:
@@ -444,7 +498,7 @@ class MathLabBridge:
                         raise KeyError(f"Не найдены столбцы {x_column}, {y_column}")
                     self._add_plot_curve(
                         manager, frame, x_column, y_column,
-                        spec.get("label") or f"{dataset_name}: {y_column}", smoothing,
+                        spec.get("label") or f"{dataset_name}: {y_column}", smoothing, approximation,
                     )
                     labels_x.append(str(x_column))
                     labels_y.append(str(y_column))
@@ -464,7 +518,7 @@ class MathLabBridge:
                             raise ValueError("Массивы содержат нечисловые значения")
                         self._add_plot_curve(
                             manager, pd.DataFrame({"x": x, "y": y}), "x", "y",
-                            spec.get("label") or f"{y_name}({x_name})", smoothing,
+                            spec.get("label") or f"{y_name}({x_name})", smoothing, approximation,
                         )
                         labels_x.append(x_name)
                         labels_y.append(y_name)
@@ -679,7 +733,7 @@ class MathLabBridge:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    def render_plot_curves(self, curves, title=None, legend_visible=True, legend_position="best", smoothing=None):
+    def render_plot_curves(self, curves, title=None, legend_visible=True, legend_position="best", smoothing=None, approximation=None):
         """Render multiple dataset/column combinations on one set of axes."""
         manager = None
         try:
@@ -719,7 +773,7 @@ class MathLabBridge:
 
                 self._add_plot_curve(
                     manager, frame, x_column, y_column,
-                    label or f"{dataset_name}: {y_column}", smoothing,
+                    label or f"{dataset_name}: {y_column}", smoothing, approximation,
                 )
                 labels_x.append(str(x_column))
                 labels_y.append(str(y_column))
@@ -750,7 +804,7 @@ class MathLabBridge:
             if manager is not None:
                 manager.close()
 
-    def render_plot_array_curves(self, curves, title=None, legend_visible=True, legend_position="best", smoothing=None):
+    def render_plot_array_curves(self, curves, title=None, legend_visible=True, legend_position="best", smoothing=None, approximation=None):
         """Render curves directly from named engine array variables."""
         manager = None
         try:
@@ -790,7 +844,7 @@ class MathLabBridge:
                         raise ValueError(f"Массивы '{x_name}' и '{y_name}' содержат нечисловые значения")
                     frame = pd.DataFrame({"x": x, "y": y})
                     label = spec.get("label") or f"{y_name}({x_name})"
-                    self._add_plot_curve(manager, frame, "x", "y", label, smoothing)
+                    self._add_plot_curve(manager, frame, "x", "y", label, smoothing, approximation)
                     labels_x.append(x_name)
                     labels_y.append(y_name)
 
