@@ -366,8 +366,52 @@ class _ExpressionConverter:
                     start,
                 )
 
-            # Обычные аргументы функций.
+            # Генерация числовых последовательностей.
             args = [self.convert(arg) for arg in node.args]
+
+            if name == "range":
+                if node.keywords or not 1 <= len(args) <= 3:
+                    raise ParseError("Синтаксис: range(stop) или range(start, stop, step)")
+
+                values = []
+                for argument in args:
+                    if not isinstance(argument, sp.Number) or argument.is_real is not True:
+                        raise ParseError("Аргументы range должны быть действительными числами")
+                    number = float(argument)
+                    if not np.isfinite(number) or not number.is_integer():
+                        raise ParseError("Аргументы range должны быть целыми числами")
+                    values.append(int(number))
+
+                if len(values) == 1:
+                    start, stop, step = 0, values[0], 1
+                elif len(values) == 2:
+                    start, stop = values
+                    step = 1
+                else:
+                    start, stop, step = values
+
+                if step == 0:
+                    raise ParseError("Шаг range не может быть равен нулю")
+                if len(range(start, stop, step)) > 1_000_000:
+                    raise ParseError("Последовательность слишком большая (максимум 1 000 000 элементов)")
+                result = np.arange(start, stop, step, dtype=float)
+                if result.size == 0:
+                    raise ParseError("Последовательность range не может быть пустой")
+                return result
+
+            if name == "linspace":
+                if node.keywords or len(args) not in (2, 3):
+                    raise ParseError("Синтаксис: linspace(start, stop, count)")
+                if any(not isinstance(arg, sp.Number) or arg.is_real is not True for arg in args):
+                    raise ParseError("Аргументы linspace должны быть действительными числами")
+                start, stop = (float(sp.N(arg)) for arg in args[:2])
+                count_value = float(sp.N(args[2])) if len(args) == 3 else 50
+                if not np.isfinite(count_value) or not count_value.is_integer():
+                    raise ParseError("Количество точек linspace должно быть целым числом")
+                count = int(count_value)
+                if count < 1 or count > 1_000_000:
+                    raise ParseError("Количество точек linspace должно быть от 1 до 1 000 000")
+                return np.linspace(start, stop, count)
 
             if name in BUILTIN_FUNCTIONS:
                 if node.keywords:
