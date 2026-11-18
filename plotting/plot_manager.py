@@ -23,6 +23,8 @@ class PlotManager:
         self._grid = grid
 
         self.figure, self.axes = plt.subplots(figsize=figsize)
+        self.figure.patch.set_facecolor("#101827")
+        self.axes.set_facecolor("#101827")
         self._curves = []
         self._lines = []
 
@@ -32,7 +34,13 @@ class PlotManager:
         self.axes.set_title(self._title)
         self.axes.set_xlabel(self._xlabel)
         self.axes.set_ylabel(self._ylabel)
-        self.axes.grid(self._grid)
+        self.axes.grid(self._grid, color="#334155", alpha=0.65, linewidth=0.7)
+        self.axes.tick_params(colors="#cbd5e1")
+        self.axes.xaxis.label.set_color("#e2e8f0")
+        self.axes.yaxis.label.set_color("#e2e8f0")
+        self.axes.title.set_color("#f1f5f9")
+        for spine in self.axes.spines.values():
+            spine.set_color("#64748b")
 
     @property
     def curves(self):
@@ -123,7 +131,7 @@ class PlotManager:
         legend = self.axes.get_legend()
 
         if labels:
-            self.axes.legend()
+            legend = self.axes.legend(facecolor="#172235", edgecolor="#475569", labelcolor="#e2e8f0")
         elif legend is not None:
             legend.remove()
 
