@@ -54,6 +54,28 @@ def test_filter_rows_requires_bound():
         filter_rows(pd.DataFrame({"x": [1]}), "x")
 
 
+def test_filter_rows_includes_range_boundaries_and_preserves_source():
+    data = pd.DataFrame({"time": [0, 1, 2, 3], "value": [10, 20, 30, 40]})
+
+    result = filter_rows(data, "time", minimum=1, maximum=2)
+
+    assert result["time"].tolist() == [1, 2]
+    assert result["value"].tolist() == [20, 30]
+    assert data["time"].tolist() == [0, 1, 2, 3]
+
+
+def test_filter_rows_allows_one_sided_range():
+    data = pd.DataFrame({"x": [1, 2, 3, 4]})
+
+    assert filter_rows(data, "x", minimum=3)["x"].tolist() == [3, 4]
+    assert filter_rows(data, "x", maximum=2)["x"].tolist() == [1, 2]
+
+
+def test_filter_rows_rejects_reversed_range():
+    with pytest.raises(ValueError, match="minimum must not exceed maximum"):
+        filter_rows(pd.DataFrame({"x": [1, 2]}), "x", minimum=3, maximum=1)
+
+
 def test_smooth():
     data = pd.DataFrame({"x": [0, 3, 0, 3, 0]})
     result = smooth(data, "x", window=3)
