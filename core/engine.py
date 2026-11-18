@@ -1,6 +1,44 @@
 ﻿import sympy as sp
 import numpy as np
 
+def _expression_symbols(expression):
+    if isinstance(expression, np.ndarray):
+        result = set()
+        for item in expression.flat:
+            result.update(_expression_symbols(item))
+        return result
+    if isinstance(expression, (list, tuple)):
+        result = set()
+        for item in expression:
+            result.update(_expression_symbols(item))
+        return result
+    return set(_expression_symbols(expression)) if isinstance(expression, sp.Basic) else set()
+
+
+def _substitute_expression(expression, substitutions):
+    if isinstance(expression, np.ndarray):
+        result = np.empty(expression.shape, dtype=object)
+        for index, item in np.ndenumerate(expression):
+            result[index] = _substitute_expression(item, substitutions)
+        return result
+    if isinstance(expression, sp.Basic):
+        return expression.subs(substitutions)
+    return expression
+
+
+def _numeric_array(expression):
+    values = []
+    for item in expression.flat:
+        if isinstance(item, sp.Basic):
+            if item.free_symbols:
+                raise EvaluationError("Массив содержит неопределённые переменные")
+            item = complex(sp.N(item)) if item.is_real is False else float(sp.N(item))
+            if isinstance(item, complex) and item.imag == 0:
+                item = item.real
+        values.append(item)
+    return np.asarray(values).reshape(expression.shape)
+
+
 from .parser import (
     ExpressionParser,
     VariableDefinition,
@@ -169,7 +207,7 @@ class MathEngine:
         for name, definition in variable_definitions.items():
             dependencies = {
                 str(symbol)
-                for symbol in definition.expression.free_symbols
+                for symbol in _expression_symbols(definition.expression)
                 if str(symbol) in variable_names
             }
             graph[name] = dependencies
@@ -183,7 +221,7 @@ class MathEngine:
 
             dependencies = {
                 str(symbol)
-                for symbol in expression.free_symbols
+                for symbol in _expression_symbols(expression)
                 if str(symbol) in resolved
             }
 
@@ -195,7 +233,7 @@ class MathEngine:
             has_unit = any(
                 is_unit(str(symbol))
                 and str(symbol) not in resolved
-                for symbol in expression.free_symbols
+                for symbol in _expression_symbols(expression)
             )
 
             try:
@@ -210,27 +248,26 @@ class MathEngine:
                     value = evaluator.evaluate(source_expression)
 
                 else:
-                    expression = expression.subs(resolved)
+                    expression = _substitute_expression(expression, {sp.Symbol(key): value for key, value in resolved.items()})
 
-                    if expression.free_symbols:
-                        unknown = sorted(
-                            str(symbol)
-                            for symbol in expression.free_symbols
-                        )
+                    remaining = _expression_symbols(expression)
+                    if remaining:
+                        unknown = sorted(str(symbol) for symbol in remaining)
                         raise EvaluationError(
-                            f"Р’ РїРµСЂРµРјРµРЅРЅРѕР№ '{name}' РЅРµ РѕРїСЂРµРґРµР»РµРЅС‹: "
+                            f"Неопределённые переменные в '{name}': "
                             + ", ".join(unknown)
                         )
 
-                    value = sp.N(expression)
-
-                    if value.is_real is False:
-                        raise EvaluationError(
-                            f"РџРµСЂРµРјРµРЅРЅР°СЏ '{name}' РёРјРµРµС‚ РєРѕРјРїР»РµРєСЃРЅРѕРµ Р·РЅР°С‡РµРЅРёРµ"
-                        )
-
-                    if value.is_number:
-                        value = float(value)
+                    if isinstance(expression, np.ndarray):
+                        value = _numeric_array(expression)
+                    else:
+                        value = sp.N(expression)
+                        if value.is_real is False:
+                            raise EvaluationError(
+                                f"Переменная '{name}' имеет комплексное значение"
+                            )
+                        if value.is_number:
+                            value = float(value)
 
                 resolved[name] = value
 
@@ -395,10 +432,7 @@ class MathEngine:
         try:
             expression = self.parser.parse_expression(source)
 
-            symbols = {
-                str(symbol)
-                for symbol in expression.free_symbols
-            }
+            symbols = {str(symbol) for symbol in _expression_symbols(expression)}
 
             variables = self.variables.as_dict()
 
@@ -451,16 +485,26 @@ class MathEngine:
                 if not isinstance(value, Quantity)
             }
 
-            expression = expression.subs(substitutions)
+            expression = _substitute_expression(expression, substitutions)
 
-            if expression.free_symbols:
+            if _expression_symbols(expression):
                 unknown = sorted(
                     str(symbol)
-                    for symbol in expression.free_symbols
+                    for symbol in _expression_symbols(expression)
                 )
                 raise EvaluationError(
                     "РќРµРёР·РІРµСЃС‚РЅС‹Рµ РїРµСЂРµРјРµРЅРЅС‹Рµ: " + ", ".join(unknown)
                 )
+
+            remaining = _expression_symbols(expression)
+            if remaining:
+                unknown = sorted(str(symbol) for symbol in remaining)
+                raise EvaluationError(
+                    "Неизвестные переменные: " + ", ".join(unknown)
+                )
+
+            if isinstance(expression, np.ndarray):
+                return _numeric_array(expression)
 
             if expression.is_number:
                 return float(sp.N(expression))
@@ -554,7 +598,7 @@ class MathEngine:
 
         has_symbolic_global = any(
             isinstance(global_variables.get(str(symbol)), SymbolicQuantity)
-            for symbol in definition.expression.free_symbols
+            for symbol in _expression_symbols(definition.expression)
         )
 
         if has_symbolic_argument or has_symbolic_global:
@@ -575,7 +619,7 @@ class MathEngine:
 
         has_quantity_global = any(
             isinstance(global_variables.get(str(symbol)), Quantity)
-            for symbol in definition.expression.free_symbols
+            for symbol in _expression_symbols(definition.expression)
         )
 
         if has_quantity_argument or has_quantity_global:
@@ -656,7 +700,7 @@ class MathEngine:
 
             has_symbolic_quantity = any(
                 isinstance(variables.get(str(symbol)), SymbolicQuantity)
-                for symbol in expression.free_symbols
+                for symbol in _expression_symbols(expression)
             )
 
             if has_symbolic_quantity:
@@ -735,7 +779,7 @@ class MathEngine:
 
             has_symbolic_quantity = any(
                 isinstance(variables.get(str(item)), SymbolicQuantity)
-                for item in expression.free_symbols
+                for item in _expression_symbols(expression)
             )
 
             if has_symbolic_quantity:
@@ -762,12 +806,12 @@ class MathEngine:
             # РћРїСЂРµРґРµР»СЏРµРј, С‚СЂРµР±СѓРµС‚СЃСЏ Р»Рё С„РёР·РёС‡РµСЃРєРѕРµ РІС‹С‡РёСЃР»РµРЅРёРµ.
             has_quantity = any(
                 isinstance(variables.get(str(item)), Quantity)
-                for item in expression.free_symbols
+                for item in _expression_symbols(expression)
             )
 
             has_unit = any(
                 is_unit(str(item)) and str(item) not in variables
-                for item in expression.free_symbols
+                for item in _expression_symbols(expression)
             )
 
             physical_bounds = (
@@ -920,12 +964,12 @@ class MathEngine:
 
             has_quantity = any(
                 isinstance(variables.get(str(item)), Quantity)
-                for item in expression.free_symbols
+                for item in _expression_symbols(expression)
             )
 
             has_unit = any(
                 is_unit(str(item)) and str(item) not in variables
-                for item in expression.free_symbols
+                for item in _expression_symbols(expression)
             )
 
             has_quantity_coordinates = (
