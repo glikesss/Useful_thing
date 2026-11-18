@@ -149,6 +149,47 @@ def test_bridge_renders_plot(tmp_path):
     assert response["image"].startswith("data:image/png;base64,")
 
 
+def test_bridge_renders_plot_from_formula_arrays():
+    bridge = MathLabBridge()
+    applied = bridge.set_lines([
+        "x = [0, 1, 2]",
+        "y = [1, 4, 9]",
+    ])
+    assert applied["ok"] is True
+
+    response = bridge.render_plot_array_curves([
+        {"x_name": "x", "y_name": "y", "label": "y(x)"}
+    ])
+
+    assert response["ok"] is True
+    assert response["curve_count"] == 1
+    assert response["image"].startswith("data:image/png;base64,")
+
+
+def test_bridge_rejects_array_plot_with_different_lengths():
+    bridge = MathLabBridge()
+    bridge.set_lines(["x = [0, 1, 2]", "y = [1, 4]"])
+
+    response = bridge.render_plot_array_curves([
+        {"x_name": "x", "y_name": "y"}
+    ])
+
+    assert response["ok"] is False
+    assert "разную длину" in response["error"]
+
+
+def test_bridge_rejects_non_array_plot_variables():
+    bridge = MathLabBridge()
+    bridge.set_lines(["x = 2", "y = [1, 2, 3]"])
+
+    response = bridge.render_plot_array_curves([
+        {"x_name": "x", "y_name": "y"}
+    ])
+
+    assert response["ok"] is False
+    assert "должны быть массивами" in response["error"]
+
+
 def test_bridge_previews_dataset(tmp_path):
     path = tmp_path / "preview.csv"
     path.write_text("time,value\n0,1\n1,2\n2,\n", encoding="utf-8")
