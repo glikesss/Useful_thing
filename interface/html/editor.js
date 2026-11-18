@@ -1124,7 +1124,10 @@ byId("plot-dataset").addEventListener("change", updatePlotColumns);
 byId("add-plot-curve").addEventListener("click", addPlotCurve);
 byId("add-array-curve").addEventListener("click", addArrayPlotCurve);
 byId("render-plot").addEventListener("click", renderPlot);
-byId("plot-smoothing-enabled").addEventListener("change", updatePlotSmoothingControls);
+byId("plot-smoothing-enabled").addEventListener("change", () => {
+    updatePlotSmoothingControls();
+    if (plotCurves.length) renderPlot();
+});
 byId("plot-smoothing-method").addEventListener("change", () => {
     const windowInput = byId("plot-smoothing-window");
     if (byId("plot-smoothing-method").value === "savgol") {
@@ -1133,12 +1136,14 @@ byId("plot-smoothing-method").addEventListener("change", () => {
     } else {
         windowInput.min = "1";
     }
+    if (plotCurves.length && byId("plot-smoothing-enabled").checked) renderPlot();
 });
 byId("plot-smoothing-window").addEventListener("change", () => {
     const input = byId("plot-smoothing-window");
     let value = Math.max(Number(input.min) || 1, Math.floor(Number(input.value) || 5));
     if (byId("plot-smoothing-method").value === "savgol" && value % 2 === 0) value += 1;
     input.value = String(value);
+    if (plotCurves.length && byId("plot-smoothing-enabled").checked) renderPlot();
 });
 byId("add-plot-tab").addEventListener("click", addPlotGraph);
 byId("plot-title").addEventListener("input", () => {
