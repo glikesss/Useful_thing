@@ -57,6 +57,51 @@
 
             <div class="formula-editor" id="formula-editor-list"></div>
 
+            <div class="formula-keyboard-toolbar">
+                <button class="button secondary" id="toggle-formula-keyboard" type="button" aria-expanded="false">
+                    ⌨ Математическая клавиатура
+                </button>
+                <span class="formula-keyboard-hint">Коснитесь поля формулы, затем вводите символы кнопками</span>
+            </div>
+            <div class="formula-keyboard" id="formula-keyboard" hidden aria-label="Математическая клавиатура">
+                <div class="formula-keyboard-grid">
+                    <button type="button" data-latex="7">7</button>
+                    <button type="button" data-latex="8">8</button>
+                    <button type="button" data-latex="9">9</button>
+                    <button type="button" data-latex="\\div">÷</button>
+                    <button type="button" data-latex="\\cdot">×</button>
+                    <button type="button" data-latex="-">−</button>
+                    <button type="button" data-latex="4">4</button>
+                    <button type="button" data-latex="5">5</button>
+                    <button type="button" data-latex="6">6</button>
+                    <button type="button" data-latex="(">(</button>
+                    <button type="button" data-latex=")">)</button>
+                    <button type="button" data-latex="+">+</button>
+                    <button type="button" data-latex="1">1</button>
+                    <button type="button" data-latex="2">2</button>
+                    <button type="button" data-latex="3">3</button>
+                    <button type="button" data-latex="x">x</button>
+                    <button type="button" data-latex="y">y</button>
+                    <button type="button" data-latex="=">=</button>
+                    <button type="button" data-latex="0">0</button>
+                    <button type="button" data-latex=".">.</button>
+                    <button type="button" data-latex=",">,</button>
+                    <button type="button" data-latex="\\pi">π</button>
+                    <button type="button" data-latex="^">xⁿ</button>
+                    <button type="button" data-latex="\\sqrt{#@}">√</button>
+                    <button type="button" data-latex="\\frac{#@}{#?}">a/b</button>
+                    <button type="button" data-latex="\\sin(#@)">sin</button>
+                    <button type="button" data-latex="\\cos(#@)">cos</button>
+                    <button type="button" data-latex="\\tan(#@)">tan</button>
+                    <button type="button" data-latex="\\ln(#@)">ln</button>
+                    <button type="button" data-latex="\\log(#@)">log</button>
+                    <button type="button" data-latex="\\infty">∞</button>
+                    <button type="button" data-action="backspace" class="keyboard-action">⌫</button>
+                    <button type="button" data-action="undo" class="keyboard-action">↶</button>
+                    <button type="button" data-action="clear" class="keyboard-action">Очистить</button>
+                </div>
+            </div>
+
             <div class="button-row formula-toolbar">
                 <button class="button primary" id="apply-formulas">Применить</button>
                 <button class="button secondary" id="add-formula-line">+ Добавить строку</button>
