@@ -526,7 +526,7 @@ def test_bridge_exports_rendered_plot_with_matplotlib_savefig(tmp_path, monkeypa
 
     source = tmp_path / "source.csv"
     output = tmp_path / ("graph." + file_format)
-    source.write_text("time,value\\n0,0\\n1,1\\n2,4\\n", encoding="utf-8")
+    source.write_text("time,value\n0,0\n1,1\n2,4\n", encoding="utf-8")
 
     class FakeWindow:
         def create_file_dialog(self, *args, **kwargs):
@@ -551,4 +551,4 @@ def test_bridge_exports_rendered_plot_with_matplotlib_savefig(tmp_path, monkeypa
     assert response["ok"] is True, response
     assert output.is_file()
     assert output.stat().st_size > 0
-    assert output.read_bytes().startswith(b"%PDF" if file_format == "pdf" else b"\\x89PNG")
+    assert output.read_bytes().startswith(b"%PDF" if file_format == "pdf" else b"\x89PNG")
