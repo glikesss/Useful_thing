@@ -1004,3 +1004,24 @@ byId("refresh-table").addEventListener("click", refreshTable);
 window.addEventListener("pywebviewready", initialize);
 if (window.pywebview?.api) initialize();
 
+
+
+function initializeAppearance() {
+    const root = document.documentElement;
+    const themeSelect = byId("theme-select");
+    const paletteSelect = byId("palette-select");
+    const savedTheme = localStorage.getItem("mathlab-theme") || "dark";
+    const savedPalette = localStorage.getItem("mathlab-palette") || "blue";
+    const apply = () => {
+        root.dataset.theme = themeSelect.value;
+        root.dataset.palette = paletteSelect.value;
+        localStorage.setItem("mathlab-theme", themeSelect.value);
+        localStorage.setItem("mathlab-palette", paletteSelect.value);
+    };
+    themeSelect.value = ["dark", "light", "midnight"].includes(savedTheme) ? savedTheme : "dark";
+    paletteSelect.value = ["blue", "violet", "emerald", "rose", "amber"].includes(savedPalette) ? savedPalette : "blue";
+    themeSelect.addEventListener("change", apply);
+    paletteSelect.addEventListener("change", apply);
+    apply();
+}
+initializeAppearance();
