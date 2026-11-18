@@ -211,7 +211,7 @@ class ExpressionParser:
         # Do not split arbitrary identifiers: names such as mass, force and
         # acceleration may be variables, functions, or unit names.
         return re.sub(
-            r"\\b([A-Za-z])\\1+\\b",
+            r"\b([A-Za-z])\1+\b",
             lambda match: "*".join(match.group(0)),
             source,
         )
