@@ -628,3 +628,9 @@ footer {
     margin-top: 2px;
     padding: 10px;
 }
+
+/* Keep formula symbol lists available to the editor logic, but hide them from panel 01 */
+.formula-panel > .subsection:has(#variables-list),
+.formula-panel > .subsection:has(#functions-list) {
+    display: none;
+}
