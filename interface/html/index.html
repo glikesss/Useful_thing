@@ -148,6 +148,23 @@
                 </button>
             </div>
 
+            <div class="group-plot-panel">
+                <div class="subsection-title">ОДИН ШАБЛОН ДЛЯ НЕСКОЛЬКИХ ФАЙЛОВ</div>
+                <div class="group-plot-controls">
+                    <label>Файлы / наборы данных
+                        <select id="plot-group-datasets" multiple size="4" disabled></select>
+                    </label>
+                    <label>Общая ось X
+                        <select id="plot-group-x" disabled><option value="">—</option></select>
+                    </label>
+                    <label>Общая ось Y
+                        <select id="plot-group-y" disabled><option value="">—</option></select>
+                    </label>
+                    <button class="button secondary" id="add-plot-group" disabled>Добавить для выбранных</button>
+                </div>
+                <p class="hint group-hint">Выбери несколько наборов (Ctrl/Shift), затем один раз укажи столбцы X и Y. Для каждого набора будет добавлена отдельная кривая.</p>
+            </div>
+
             <div class="plot-controls">
                 <label>
                     Массив X
