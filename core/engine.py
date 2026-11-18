@@ -68,7 +68,7 @@ def _evaluate_expression(expression, variables):
             {
                 sp.Symbol(name): value
                 for name, value in variables.items()
-                if not isinstance(value, (Quantity, SymbolicQuantity))
+                if not isinstance(value, (Quantity, SymbolicQuantity, np.ndarray))
             },
         )
         if _expression_symbols(result):
@@ -88,7 +88,7 @@ def _evaluate_expression(expression, variables):
         return expression.subs({
             sp.Symbol(name): value
             for name, value in variables.items()
-            if not isinstance(value, (Quantity, SymbolicQuantity))
+            if not isinstance(value, (Quantity, SymbolicQuantity, np.ndarray))
         })
     return expression
 
@@ -605,7 +605,7 @@ class MathEngine:
         global_values = {
             sp.Symbol(key): value
             for key, value in self.variables.as_dict().items()
-            if not isinstance(value, (Quantity, SymbolicQuantity))
+            if not isinstance(value, (Quantity, SymbolicQuantity, np.ndarray))
         }
 
         for argument in argument_names:
@@ -785,7 +785,7 @@ class MathEngine:
             substitutions = {
                 sp.Symbol(name): value
                 for name, value in variables.items()
-                if not isinstance(value, (Quantity, SymbolicQuantity))
+                if not isinstance(value, (Quantity, SymbolicQuantity, np.ndarray))
                 and name != variable_name
             }
 
@@ -1041,7 +1041,7 @@ class MathEngine:
                     parameters={
                         name: value
                         for name, value in variables.items()
-                        if not isinstance(value, (Quantity, SymbolicQuantity))
+                        if not isinstance(value, (Quantity, SymbolicQuantity, np.ndarray))
                     },
                 )
 
