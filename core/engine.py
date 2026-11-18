@@ -51,9 +51,12 @@ def _evaluate_expression(expression, variables):
                 for key, value in variables.items()
                 if isinstance(value, (int, float, np.number))
             })
-            if not index_expr.is_integer or not index_expr.is_number:
+            if not index_expr.is_number:
                 raise EvaluationError("Индекс массива должен быть целым числом")
-            index = int(index_expr)
+            numeric_index = float(sp.N(index_expr))
+            if not np.isfinite(numeric_index) or not numeric_index.is_integer():
+                raise EvaluationError("Индекс массива должен быть целым числом")
+            index = int(numeric_index)
             if index < 0 or index >= len(array):
                 raise EvaluationError(
                     f"Индекс {index + 1} вне диапазона массива '{name}'"
