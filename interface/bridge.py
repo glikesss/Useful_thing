@@ -395,9 +395,9 @@ class MathLabBridge:
         """Add a curve, optionally smoothing Y without modifying source data."""
         plot_frame = frame
         plot_y = y_column
+        if smoothing is not None and not isinstance(smoothing, dict):
+            raise TypeError("Параметры сглаживания должны быть объектом")
         if smoothing and smoothing.get("enabled"):
-            if not isinstance(smoothing, dict):
-                raise TypeError("Параметры сглаживания должны быть объектом")
             method = smoothing.get("method", "moving_average")
             window = smoothing.get("window", 5)
             polyorder = smoothing.get("polyorder", 2)
