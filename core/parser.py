@@ -186,6 +186,7 @@ class ExpressionParser:
         source = re.sub(r"\\(?:ldots|dots|cdots)\b", "...", source)
         source = source.replace("…", "...").replace("⋯", "...")
         source = source.replace("^", "**")
+        source = source.replace(r"\\cdot", "*").replace("·", "*").replace("×", "*")
         source = self._insert_implicit_multiplication(source)
 
         try:
@@ -207,14 +208,20 @@ class ExpressionParser:
             raise ParseError(str(exc)) from exc
 
     def _insert_implicit_multiplication(self, source):
-        """Interpret repeated adjacent symbols as multiplication (e.g. aa -> a*a)."""
-        # Do not split arbitrary identifiers: names such as mass, force and
-        # acceleration may be variables, functions, or unit names.
-        return re.sub(
+        """Interpret adjacent single-letter symbols as multiplication."""
+        # MathLive may serialize juxtaposed one-letter variables with spaces.
+        source = re.sub(
+            r"\b([A-Za-z])\s+([A-Za-z])\b",
+            r"\1*\2",
+            source,
+        )
+        # Also support compact repeated symbols such as aa or xxx.
+        source = re.sub(
             r"\b([A-Za-z])\1+\b",
             lambda match: "*".join(match.group(0)),
             source,
         )
+        return source
 
     def register_function(self, definition):
         self.functions[definition.name] = definition
