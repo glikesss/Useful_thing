@@ -252,6 +252,10 @@ X: ${xColumn}
         if (response.state) renderState(response.state);
         if (response.dataset_name) {
             byId("table-dataset").value = response.dataset_name;
+            if (operation === "smooth") {
+                byId("process-dataset").value = response.dataset_name;
+                updateProcessingControls();
+            }
             await refreshTable();
         }
         setMessage("processing-message", response.message, "success");
