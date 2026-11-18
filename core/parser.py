@@ -207,38 +207,14 @@ class ExpressionParser:
             raise ParseError(str(exc)) from exc
 
     def _insert_implicit_multiplication(self, source):
-        """Interpret adjacent single-letter symbols as multiplication (e.g. ax -> a*x)."""
-        reserved = (
-            set(BUILTIN_FUNCTIONS)
-            | set(self.functions)
-            | {
-                "pi", "e", "range", "linspace", "file",
-                "derivative", "integral", "cumulative",
-            }
+        """Interpret repeated adjacent symbols as multiplication (e.g. aa -> a*a)."""
+        # Do not split arbitrary identifiers: names such as mass, force and
+        # acceleration may be variables, functions, or unit names.
+        return re.sub(
+            r"\\b([A-Za-z])\\1+\\b",
+            lambda match: "*".join(match.group(0)),
+            source,
         )
-        local_names = set()
-
-        # Keep explicitly declared local symbols intact.
-        # Function calls are also preserved, including built-ins.
-        token_pattern = re.compile(r"\b[A-Za-z]+\b")
-
-        def expand(match):
-            name = match.group(0)
-            end = match.end()
-            remainder = source[end:].lstrip()
-            is_call = remainder.startswith("(")
-
-            if (
-                len(name) <= 1
-                or name in reserved
-                or is_call
-                or name in local_names
-            ):
-                return name
-
-            return "*".join(name)
-
-        return token_pattern.sub(expand, source)
 
     def register_function(self, definition):
         self.functions[definition.name] = definition
