@@ -581,3 +581,50 @@ footer {
 .plot-panel > .curve-toolbar { order: 8; }
 .plot-panel > .legend-controls { order: 9; }
 .plot-panel > .plot-container { min-height: 420px; }
+
+/* Compact vertical spacing in the plot panel */
+.plot-panel {
+    padding-top: 16px;
+    padding-bottom: 16px;
+}
+.plot-panel > .panel-heading {
+    margin-bottom: 8px;
+}
+.plot-panel > .plot-tabs-bar {
+    margin-top: 6px;
+    margin-bottom: 2px;
+}
+.plot-panel > .plot-controls {
+    gap: 7px;
+    margin: 8px 0;
+}
+.plot-panel > .plot-controls label,
+.plot-panel .group-plot-controls label,
+.plot-panel .legend-controls label {
+    gap: 4px;
+}
+.plot-panel .group-plot-panel {
+    margin: 7px 0 9px;
+    padding: 9px 11px;
+}
+.plot-panel .group-plot-controls {
+    gap: 7px;
+    margin-top: 7px;
+}
+.plot-panel .group-hint {
+    margin-top: 5px;
+    line-height: 1.45;
+}
+.plot-panel > .curve-toolbar {
+    gap: 7px;
+    margin: 7px 0 9px;
+}
+.plot-panel > .legend-controls {
+    gap: 8px 16px;
+    margin: 7px 0 8px;
+    padding: 7px 10px;
+}
+.plot-panel > .plot-container {
+    margin-top: 2px;
+    padding: 10px;
+}
