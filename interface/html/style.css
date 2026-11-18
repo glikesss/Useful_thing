@@ -203,3 +203,88 @@ footer {
 .formula-render-source { margin-bottom: 7px; color: #8fa8c7; font: 11px/1.5 Consolas, monospace; overflow-wrap: anywhere; }
 .formula-render-math { min-height: 28px; overflow-x: auto; color: #f0f5ff; font-size: 18px; }
 .formula-render-math math { color: inherit; }
+
+
+/* Desmos-like expression editor */
+.formula-editor {
+    display: grid;
+    gap: 7px;
+    margin-top: 16px;
+}
+.formula-row {
+    display: grid;
+    grid-template-columns: 25px minmax(180px, 1fr) minmax(130px, .9fr) 30px;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    padding: 7px 8px;
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    background: rgba(12, 23, 41, .72);
+    transition: border-color .15s ease, background .15s ease;
+}
+.formula-row:focus-within {
+    border-color: rgba(109, 158, 255, .65);
+    background: rgba(20, 36, 59, .92);
+}
+.formula-row-number {
+    color: var(--muted-dim);
+    text-align: center;
+    font: 11px Consolas, monospace;
+}
+.formula-row-input {
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 11px;
+    font: 13px Consolas, "Cascadia Code", monospace;
+}
+.formula-row-preview {
+    min-width: 0;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    overflow-x: auto;
+    padding: 4px 9px;
+    color: #edf3ff;
+    font-size: 17px;
+    border-left: 1px solid var(--border-soft);
+}
+.formula-row-preview math { color: inherit; }
+.formula-preview-pending, .formula-preview-placeholder {
+    color: var(--muted-dim);
+    font: 10px/1.4 Inter, "Segoe UI", sans-serif;
+}
+.formula-row-remove {
+    width: 29px;
+    height: 29px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #8fa4c0;
+    background: transparent;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+}
+.formula-row-remove:hover {
+    color: #ffaaaa;
+    border-color: rgba(255, 130, 130, .25);
+    background: rgba(255, 100, 100, .1);
+}
+.formula-toolbar { margin-top: 12px; }
+@media (max-width: 620px) {
+    .formula-row {
+        grid-template-columns: 20px minmax(0, 1fr) 28px;
+        gap: 6px;
+    }
+    .formula-row-preview {
+        grid-column: 2 / 3;
+        grid-row: 2;
+        min-height: 27px;
+        padding: 2px 8px;
+        border-left: 0;
+        border-top: 1px solid var(--border-soft);
+    }
+    .formula-row-remove { grid-column: 3; grid-row: 1; }
+    .formula-row-number { grid-column: 1; grid-row: 1; }
+    .formula-row-input { grid-column: 2; grid-row: 1; }
+}
