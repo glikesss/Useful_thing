@@ -126,6 +126,22 @@
                 <div id="datasets-list" class="dataset-list empty">
                     CSV-файлы ещё не загружены
                 </div>
+                <div class="subsection">
+                    <div class="subsection-title">ИМПОРТ СТОЛБЦА В МАССИВ</div>
+                    <div class="plot-controls">
+                        <label>Набор данных
+                            <select id="array-import-dataset" disabled><option value="">Нет данных</option></select>
+                        </label>
+                        <label>Столбец
+                            <select id="array-import-column" disabled><option value="">—</option></select>
+                        </label>
+                        <label>Имя массива
+                            <input id="array-import-name" type="text" placeholder="Например: time">
+                        </label>
+                        <button class="button secondary" id="import-column-array" disabled>Импортировать в массив</button>
+                    </div>
+                    <div class="message" id="array-import-message"></div>
+                </div>
                 <div class="message" id="dataset-message"></div>
             </section>
         </div>
