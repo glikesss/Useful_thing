@@ -647,3 +647,8 @@ footer {
 .formula-panel > .subsection:has(#functions-list) {
     display: none;
 }
+
+
+.table-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.table-toolbar select { min-width: 180px; flex: 1 1 180px; }
+.table-toolbar .button { white-space: nowrap; }
