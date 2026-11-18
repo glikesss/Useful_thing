@@ -516,3 +516,33 @@ footer {
 .process-panel { margin-top: 20px; }
 .processing-panel .plot-controls { grid-template-columns: 1.1fr 1fr 1fr 1.2fr 1fr auto; }
 @media (max-width: 1050px) { .processing-panel .plot-controls { grid-template-columns: 1fr 1fr; } }
+
+
+/* Presentation MathML formula previews */
+.formula-render-list {
+    display: grid;
+    gap: 9px;
+    margin-top: 12px;
+}
+.formula-render-item {
+    min-width: 0;
+    padding: 12px 14px;
+    border: 1px solid #30435d;
+    border-radius: 9px;
+    background: linear-gradient(120deg, #17283e, #142033);
+}
+.formula-render-source {
+    margin-bottom: 7px;
+    color: #8fa8c7;
+    font: 11px/1.5 Consolas, monospace;
+    overflow-wrap: anywhere;
+}
+.formula-render-math {
+    min-height: 28px;
+    overflow-x: auto;
+    color: #f0f5ff;
+    font-size: 18px;
+}
+.formula-render-math math {
+    color: inherit;
+}
