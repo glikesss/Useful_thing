@@ -177,7 +177,7 @@ class ExpressionParser:
         # MathLive may serialize named operators as LaTeX in ASCII output.
         # Normalize file() so it reaches Python's AST as an ordinary function call.
         source = re.sub(
-            r"\\\\(?:operatorname|mathrm|text)\\s*\\{\\s*file\\s*\\}",
+            r"\\(?:operatorname|mathrm|text)\s*\{\s*file\s*\}",
             "file",
             source,
         )
