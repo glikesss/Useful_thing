@@ -159,3 +159,32 @@ def test_smooth_rejects_infinity(value):
     df = pd.DataFrame({"y": [1.0, value, 3.0]})
     with pytest.raises(ValueError, match="finite"):
         smooth(df, "y")
+
+
+def test_savgol_smoothing_preserves_quadratic_signal():
+    data = pd.DataFrame({"y": [1.0, 4.0, 9.0, 16.0, 25.0, 36.0, 49.0]})
+    result = smooth(data, "y", window=5, method="savgol", polyorder=2)
+
+    np.testing.assert_allclose(result["y_smoothed"], data["y"], atol=1e-10)
+
+
+@pytest.mark.parametrize("window", [2, 4, 8])
+def test_savgol_smoothing_requires_odd_window(window):
+    data = pd.DataFrame({"y": np.arange(10, dtype=float)})
+
+    with pytest.raises(ValueError, match="odd integer"):
+        smooth(data, "y", window=window, method="savgol")
+
+
+def test_savgol_smoothing_rejects_window_larger_than_data():
+    data = pd.DataFrame({"y": np.arange(5, dtype=float)})
+
+    with pytest.raises(ValueError, match="cannot exceed"):
+        smooth(data, "y", window=7, method="savgol")
+
+
+def test_savgol_smoothing_rejects_polyorder_not_less_than_window():
+    data = pd.DataFrame({"y": np.arange(7, dtype=float)})
+
+    with pytest.raises(ValueError, match="smaller than window"):
+        smooth(data, "y", window=5, method="savgol", polyorder=5)
