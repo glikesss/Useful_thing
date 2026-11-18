@@ -151,13 +151,21 @@ class MathLabBridge:
             return None
 
     def _build_state(self):
-        variables = [
-            {
+        variables = []
+        for name in self.engine.get_variable_names():
+            value = self.engine.get_variable(name)
+            variable = {
                 "name": name,
-                "value": self._format_value(self.engine.get_variable(name)),
+                "value": self._format_value(value),
             }
-            for name in self.engine.get_variable_names()
-        ]
+            if isinstance(value, np.ndarray):
+                flat = np.asarray(value).reshape(-1)
+                variable["array_preview"] = {
+                    "values": [self._json_value(item) for item in flat[:12]],
+                    "size": int(flat.size),
+                    "shape": list(value.shape),
+                }
+            variables.append(variable)
         formulas = [
             {
                 "name": name,
