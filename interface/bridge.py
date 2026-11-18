@@ -278,6 +278,42 @@ class MathLabBridge:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def import_column_to_array(self, dataset_name, column, array_name):
+        """Copy a numeric CSV column into a persistent formula array."""
+        try:
+            if not isinstance(array_name, str) or not array_name.strip():
+                raise ValueError("Введите имя массива")
+            array_name = array_name.strip()
+            if not array_name.isidentifier():
+                raise ValueError("Имя массива должно быть корректным идентификатором")
+            if array_name in self.engine.definitions or array_name in self.engine.functions:
+                raise ValueError(f"Имя '{array_name}' уже используется формулой или функцией")
+
+            with self._lock:
+                frame = self.data_manager.get_data(dataset_name)
+                if column not in frame.columns:
+                    raise KeyError(f"Не найден столбец: {column}")
+                values = pd.to_numeric(frame[column], errors="coerce")
+                if values.isna().any():
+                    bad_rows = (np.flatnonzero(values.isna().to_numpy()) + 2).tolist()
+                    raise ValueError(
+                        f"Столбец '{column}' содержит пустые или нечисловые значения "
+                        f"(строки CSV: {', '.join(map(str, bad_rows[:10]))})"
+                    )
+                array = values.to_numpy(dtype=float)
+                if not np.all(np.isfinite(array)):
+                    raise ValueError(f"Столбец '{column}' содержит NaN или бесконечность")
+                if array_name in self.engine.external_variables:
+                    raise ValueError(f"Массив '{array_name}' уже импортирован")
+                self.engine.set_external_variable(array_name, array.copy())
+                return {
+                    "ok": True,
+                    "state": self._build_state(),
+                    "message": f"Столбец «{column}» импортирован в массив «{array_name}» ({len(array)} значений)",
+                }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     def remove_dataset(self, name):
         try:
             with self._lock:
