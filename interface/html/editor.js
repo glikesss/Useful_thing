@@ -185,6 +185,13 @@ function updateProcessingControls() {
         addOption(columnSelect, column, column);
         addOption(xSelect, column, column);
     }
+    // Prefer the first numeric column as X (usually time) and the second as Y.
+    if (dataset.numeric_columns.length > 1) {
+        columnSelect.selectedIndex = 2;
+        xSelect.selectedIndex = 1;
+    } else if (dataset.numeric_columns.length === 1) {
+        xSelect.selectedIndex = 0; // use row index when no separate X column exists
+    }
     columnSelect.disabled = dataset.numeric_columns.length === 0;
     xSelect.disabled = dataset.numeric_columns.length === 0;
     byId("run-processing").disabled = false;
@@ -210,8 +217,20 @@ async function runProcessing() {
             setMessage("processing-message", response.error, "error");
             return;
         }
-        byId("processing-result").textContent = response.result ?? response.message;
+        const descriptions = {
+            smooth: "Скользящее среднее: каждое значение заменяется средним в окне указанного размера.",
+            derivative: "Численная производная: dY/dX (градиент по выбранной оси X).",
+            integrate: "Численное интегрирование методом трапеций: ∫Y dX.",
+            statistics: "Описательная статистика для всех числовых столбцов: count — число значений; mean — среднее; std — стандартное отклонение; min/max — минимум/максимум; 25%/50%/75% — квартили."
+        };
+        byId("processing-result").textContent =
+            (descriptions[operation] || "") + "\\n\\n" +
+            (response.result ?? response.message ?? "");
         if (response.state) renderState(response.state);
+        if (response.dataset_name) {
+            byId("table-dataset").value = response.dataset_name;
+            await refreshTable();
+        }
         setMessage("processing-message", response.message, "success");
     } catch (error) {
         setMessage("processing-message", error.message, "error");

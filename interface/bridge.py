@@ -286,8 +286,12 @@ class MathLabBridge:
                 if not column:
                     raise ValueError("Выберите столбец")
                 value = integrate(frame, column, x_column=x_column or None)
-                return {"ok": True, "result": self._format_value(value),
-                        "message": f"Интеграл столбца {column}: {value}"}
+                x_label = x_column or "индекс строк"
+                return {
+                    "ok": True,
+                    "result": f"∫ {column} d({x_label}) = {value}",
+                    "message": "Интеграл рассчитан методом трапеций",
+                }
             elif operation == "statistics":
                 result = statistics(frame)
                 return {"ok": True, "result": result.to_string(),
