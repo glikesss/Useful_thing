@@ -174,6 +174,13 @@ class ExpressionParser:
         )
 
     def parse_expression(self, source, local_symbols=None):
+        # MathLive may serialize named operators as LaTeX in ASCII output.
+        # Normalize file() so it reaches Python's AST as an ordinary function call.
+        source = re.sub(
+            r"\\\\(?:operatorname|mathrm|text)\\s*\\{\\s*file\\s*\\}",
+            "file",
+            source,
+        )
         source = source.replace("^", "**")
         source = self._insert_implicit_multiplication(source)
 
