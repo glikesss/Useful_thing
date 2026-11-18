@@ -1,4 +1,5 @@
-﻿import matplotlib
+﻿import pytest
+import matplotlib
 matplotlib.use("Agg", force=True)
 
 import pandas as pd
