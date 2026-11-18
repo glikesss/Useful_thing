@@ -39,6 +39,29 @@ def _numeric_array(expression):
     return np.asarray(values).reshape(expression.shape)
 
 def _evaluate_expression(expression, variables):
+    if isinstance(expression, sp.Basic) and expression.has(sp.Indexed):
+        replacements = {}
+        for item in expression.atoms(sp.Indexed):
+            name = str(item.base.label)
+            array = variables.get(name)
+            if not isinstance(array, np.ndarray):
+                raise EvaluationError(f"'{name}' не является массивом")
+            index_expr = item.indices[0].subs({
+                sp.Symbol(key): value
+                for key, value in variables.items()
+                if isinstance(value, (int, float, np.number))
+            })
+            if not index_expr.is_integer or not index_expr.is_number:
+                raise EvaluationError("Индекс массива должен быть целым числом")
+            index = int(index_expr) - 1
+            if index < 0 or index >= len(array):
+                raise EvaluationError(
+                    f"Индекс {index + 1} вне диапазона массива '{name}'"
+                )
+            replacements[item] = sp.sympify(array[index])
+        expression = expression.xreplace(replacements)
+        return _evaluate_expression(expression, variables)
+
     if isinstance(expression, np.ndarray):
         result = _substitute_expression(
             expression,
