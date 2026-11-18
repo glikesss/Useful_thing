@@ -1,0 +1,5311 @@
+
+======================== core/calculus.py ========================
+import numpy as np
+import sympy as sp
+
+from scipy.integrate import quad, cumulative_trapezoid
+
+from .errors import EvaluationError, ParseError
+
+
+def _validate_variable(variable):
+    if not isinstance(variable, sp.Symbol):
+        raise ParseError(
+            "В качестве переменной дифференцирования или интегрирования "
+            "нужно указать имя, например x"
+        )
+
+
+def differentiate(expression, variable, order=1):
+    _validate_variable(variable)
+
+    if not isinstance(order, (int, sp.Integer)) or order < 1:
+        raise ParseError("Порядок производной должен быть положительным целым числом")
+
+    return sp.diff(expression, variable, int(order))
+
+
+def integrate(expression, variable, lower=None, upper=None):
+    _validate_variable(variable)
+
+    if lower is None and upper is None:
+        return sp.integrate(expression, variable)
+
+    if lower is None or upper is None:
+        raise ParseError("Нужно указать оба предела интегрирования")
+
+    return sp.integrate(
+        expression,
+        (variable, lower, upper),
+    )
+
+
+def cumulative_integral(expression, variable, start):
+    """
+    Символьный накопительный интеграл:
+        F(x) = integral(expression, x, start, x)
+    """
+
+    _validate_variable(variable)
+
+    dummy = sp.Dummy("integration_variable")
+
+    integrand = expression.subs(variable, dummy)
+
+    return sp.integrate(
+        integrand,
+        (dummy, start, variable),
+    )
+
+
+def numerical_integral(expression, variable, lower, upper, parameters=None):
+    """
+    Численное вычисление определённого интеграла.
+    """
+
+    _validate_variable(variable)
+
+    parameters = parameters or {}
+
+    expression = expression.subs({
+        sp.Symbol(name): value
+        for name, value in parameters.items()
+    })
+
+    if expression.free_symbols - {variable}:
+        raise EvaluationError(
+            "В интеграле остались неопределённые переменные: "
+            + ", ".join(map(str, expression.free_symbols - {variable}))
+        )
+
+    function = sp.lambdify(
+        variable,
+        expression,
+        modules=["numpy", "math"],
+    )
+
+    try:
+        result, error = quad(
+            lambda value: float(function(value)),
+            float(lower),
+            float(upper),
+        )
+
+        return result
+
+    except Exception as exc:
+        raise EvaluationError(
+            f"Ошибка численного интегрирования: {exc}"
+        ) from exc
+
+
+def numerical_cumulative_integral(
+    expression,
+    variable,
+    start,
+    values,
+    parameters=None,
+):
+    """
+    Численный накопительный интеграл для массива значений.
+
+    Возвращает массив:
+        F(x_i) = integral from start to x_i of f(x) dx
+
+    Метод: составная формула трапеций.
+    """
+
+    _validate_variable(variable)
+
+    values = np.asarray(values, dtype=float)
+
+    if values.ndim != 1:
+        raise EvaluationError(
+            "Накопительный интеграл принимает одномерный массив"
+        )
+
+    if values.size == 0:
+        return np.array([], dtype=float)
+
+    if not np.all(np.isfinite(values)):
+        raise EvaluationError(
+            "Массив содержит NaN или бесконечные значения"
+        )
+
+    parameters = parameters or {}
+
+    expression = expression.subs({
+        sp.Symbol(name): value
+        for name, value in parameters.items()
+    })
+
+    unresolved = expression.free_symbols - {variable}
+
+    if unresolved:
+        raise EvaluationError(
+            "Неизвестные переменные: "
+            + ", ".join(map(str, unresolved))
+        )
+
+    function = sp.lambdify(
+        variable,
+        expression,
+        modules=["numpy", "math"],
+    )
+
+    grid = np.concatenate(([float(start)], values))
+
+    differences = np.diff(grid)
+
+    if not (
+        np.all(differences >= 0)
+        or np.all(differences <= 0)
+    ):
+        raise EvaluationError(
+            "Значения x должны идти в монотонном порядке"
+        )
+
+    try:
+        result_values = np.asarray(function(grid), dtype=float)
+
+        if result_values.ndim == 0:
+            result_values = np.full_like(grid, result_values)
+
+        if not np.all(np.isfinite(result_values)):
+            raise EvaluationError(
+                "Функция вернула NaN или бесконечность"
+            )
+
+        result = cumulative_trapezoid(
+            result_values,
+            x=grid,
+            initial=0.0,
+        )
+
+        return result[1:]
+
+    except EvaluationError:
+        raise
+    except Exception as exc:
+        raise EvaluationError(
+            f"Ошибка накопительного интегрирования: {exc}"
+        ) from exc
+
+
+======================== core/dependencies.py ========================
+from .errors import DependencyError
+
+
+def topological_sort(graph):
+    """
+    graph:
+        {
+            "a": {"b", "c"},
+            "b": {"c"},
+            "c": set()
+        }
+
+    Значение каждого узла — его зависимости.
+    """
+
+    result = []
+    temporary = set()
+    permanent = set()
+
+    def visit(node):
+        if node in permanent:
+            return
+
+        if node in temporary:
+            raise DependencyError(
+                f"Обнаружена циклическая зависимость: {node}"
+            )
+
+        temporary.add(node)
+
+        for dependency in graph.get(node, set()):
+            if dependency in graph:
+                visit(dependency)
+
+        temporary.remove(node)
+        permanent.add(node)
+        result.append(node)
+
+    for node in graph:
+        visit(node)
+
+    return result
+
+
+======================== core/engine.py ========================
+import sympy as sp
+import numpy as np
+
+from .parser import (
+    ExpressionParser,
+    VariableDefinition,
+    FunctionDefinition,
+)
+from .variables import VariableStore
+from .dependencies import topological_sort
+from .errors import (
+    EvaluationError,
+    DependencyError,
+)
+
+from .calculus import (
+    differentiate,
+    integrate,
+    numerical_integral,
+    numerical_cumulative_integral,
+)
+
+from units.expression import QuantityExpressionEvaluator
+from units.quantities import Quantity, SymbolicQuantity
+from units.registry import is_unit
+from .errors import EvaluationError, DimensionError, ParseError
+
+from scipy.integrate import quad
+
+from scipy.integrate import cumulative_trapezoid
+
+class MathEngine:
+    def __init__(self):
+        self.lines = []
+
+        self.parser = ExpressionParser()
+        self.variables = VariableStore()
+        self.symbolic_variables = {}
+        self.definitions = {}
+        self.functions = {}
+        self.compiled_functions = {}
+
+    def set_symbolic_variable(
+        self,
+        name,
+        expression,
+        dimension=None,
+        symbol_dimensions=None,
+    ):
+        symbol = sp.Symbol(name)
+
+        quantity = SymbolicQuantity(
+            expression=expression,
+            dimension=dimension,
+            symbol_dimensions=symbol_dimensions or {symbol: dimension}
+            if dimension is not None
+            else symbol_dimensions or {},
+        )
+
+        self.symbolic_variables[name] = quantity
+        self.variables.set(name, quantity)
+
+    def remove_symbolic_variable(self, name):
+        self.symbolic_variables.pop(name, None)
+        self.variables.remove(name)
+
+    # -------------------------------------------------
+    # РАБОТА С ФОРМУЛАМИ
+    # -------------------------------------------------
+
+    def add_line(self, source):
+        self.lines.append(source)
+
+        try:
+            self._rebuild()
+        except Exception:
+            self.lines.pop()
+            self._rebuild()
+            raise
+
+        return len(self.lines) - 1
+
+    def update_line(self, index, source):
+        old_source = self.lines[index]
+        self.lines[index] = source
+
+        try:
+            self._rebuild()
+        except Exception:
+            self.lines[index] = old_source
+            self._rebuild()
+            raise
+
+    def remove_line(self, index):
+        old_source = self.lines.pop(index)
+
+        try:
+            self._rebuild()
+        except Exception:
+            self.lines.insert(index, old_source)
+            self._rebuild()
+            raise
+
+    def set_lines(self, sources):
+        old_lines = self.lines
+        self.lines = list(sources)
+
+        try:
+            self._rebuild()
+        except Exception:
+            self.lines = old_lines
+            self._rebuild()
+            raise
+
+    def clear(self):
+        self.lines.clear()
+        self._rebuild()
+
+
+    # -------------------------------------------------
+    # ПЕРЕСБОРКА ЯДРА
+    # -------------------------------------------------
+
+    def _rebuild(self):
+        self.parser = ExpressionParser()
+
+        self.variables.clear()
+        self.variables.update(self.symbolic_variables)
+        self.definitions.clear()
+        self.functions.clear()
+        self.compiled_functions.clear()
+
+        # Сначала разбираем все строки.
+        # Пользовательские функции должны быть объявлены
+        # до первого использования.
+        for source in self.lines:
+            parsed = self.parser.parse_definition(source)
+            definition = parsed.definition
+
+            if definition.name in self.definitions:
+                raise EvaluationError(
+                    f"Имя '{definition.name}' определено повторно"
+                )
+
+            self.definitions[definition.name] = definition
+
+            if isinstance(definition, FunctionDefinition):
+                self.functions[definition.name] = definition
+                self.parser.register_function(definition)
+
+        self._calculate_variables()
+        self._compile_functions()
+
+    # -------------------------------------------------
+    # ВЫЧИСЛЕНИЕ ПЕРЕМЕННЫХ
+    # -------------------------------------------------
+
+        
+    def _calculate_variables(self):
+        variable_definitions = {
+            name: definition
+            for name, definition in self.definitions.items()
+            if isinstance(definition, VariableDefinition)
+        }
+
+        variable_names = set(variable_definitions)
+        graph = {}
+
+        for name, definition in variable_definitions.items():
+            dependencies = {
+                str(symbol)
+                for symbol in definition.expression.free_symbols
+                if str(symbol) in variable_names
+            }
+            graph[name] = dependencies
+
+        order = topological_sort(graph)
+        resolved = {}
+
+        for name in order:
+            definition = variable_definitions[name]
+            expression = definition.expression
+
+            dependencies = {
+                str(symbol)
+                for symbol in expression.free_symbols
+                if str(symbol) in resolved
+            }
+
+            has_quantity_dependency = any(
+                isinstance(resolved[dep], Quantity)
+                for dep in dependencies
+            )
+
+            has_unit = any(
+                is_unit(str(symbol))
+                and str(symbol) not in resolved
+                for symbol in expression.free_symbols
+            )
+
+            try:
+                if has_quantity_dependency or has_unit:
+                    _, source_expression = self.parser._split_assignment(
+                        definition.source
+                    )
+
+                    evaluator = QuantityExpressionEvaluator(
+                        variables=resolved
+                    )
+                    value = evaluator.evaluate(source_expression)
+
+                else:
+                    expression = expression.subs(resolved)
+
+                    if expression.free_symbols:
+                        unknown = sorted(
+                            str(symbol)
+                            for symbol in expression.free_symbols
+                        )
+                        raise EvaluationError(
+                            f"В переменной '{name}' не определены: "
+                            + ", ".join(unknown)
+                        )
+
+                    value = sp.N(expression)
+
+                    if value.is_real is False:
+                        raise EvaluationError(
+                            f"Переменная '{name}' имеет комплексное значение"
+                        )
+
+                    if value.is_number:
+                        value = float(value)
+
+                resolved[name] = value
+
+            except (EvaluationError, DimensionError):
+                raise
+
+            except Exception as exc:
+                raise EvaluationError(
+                    f"Не удалось вычислить '{name}': {exc}"
+                ) from exc
+
+        self.variables.update(resolved)
+
+
+    # -------------------------------------------------
+    # КОМПИЛЯЦИЯ ПОЛЬЗОВАТЕЛЬСКИХ ФУНКЦИЙ
+    # -------------------------------------------------
+
+    
+    def _compile_functions(self):
+        self.compiled_functions = {}
+
+        global_values = {
+            sp.Symbol(name): value
+            for name, value in self.variables.as_dict().items()
+            if not isinstance(value, (Quantity, SymbolicQuantity))
+        }
+
+        known_globals = {
+            sp.Symbol(name)
+            for name in self.variables.as_dict()
+        }
+
+        for name, definition in self.functions.items():
+            argument_symbols = {
+                sp.Symbol(str(argument))
+                for argument in definition.arguments
+            }
+
+            for argument, default in definition.defaults.items():
+                unresolved = (
+                    default.free_symbols
+                    - known_globals
+                    - argument_symbols
+                )
+
+                if unresolved:
+                    names = ", ".join(
+                        sorted(str(symbol) for symbol in unresolved)
+                    )
+                    raise EvaluationError(
+                        f"Unknown symbol(s) in default argument "
+                        f"'{argument}' of function '{name}': {names}"
+                    )
+
+            expression = definition.expression.subs(global_values)
+
+            self.compiled_functions[name] = sp.lambdify(
+                definition.arguments,
+                expression,
+                modules=["numpy", "math"],
+            )
+
+    # -------------------------------------------------
+    # ВЫЧИСЛЕНИЕ ПРОИЗВОЛЬНОГО ВЫРАЖЕНИЯ
+    # -------------------------------------------------
+
+    def _evaluate_symbolic_expression(self, expression, variables):
+        if expression.is_Number:
+            return expression
+
+        if expression.is_Symbol:
+            name = str(expression)
+            return variables.get(name, expression)
+
+        if expression.is_Add:
+            args = [
+                self._evaluate_symbolic_expression(arg, variables)
+                for arg in expression.args
+            ]
+
+            result = args[0]
+
+            for arg in args[1:]:
+                result = result + arg
+
+            return result
+
+        if expression.is_Mul:
+            args = [
+                self._evaluate_symbolic_expression(arg, variables)
+                for arg in expression.args
+            ]
+
+            result = args[0]
+
+            for arg in args[1:]:
+                result = result * arg
+
+            return result
+
+        if expression.is_Pow:
+            base = self._evaluate_symbolic_expression(
+                expression.base, variables
+            )
+            exponent = self._evaluate_symbolic_expression(
+                expression.exp, variables
+            )
+
+            return base ** exponent
+
+        if expression.is_Function:
+            args = [
+                self._evaluate_symbolic_expression(arg, variables)
+                for arg in expression.args
+            ]
+
+            if any(isinstance(arg, SymbolicQuantity) for arg in args):
+                if expression.func == sp.Abs:
+                    return abs(args[0])
+
+                if any(
+                    isinstance(arg, SymbolicQuantity)
+                    and not arg.dimension.is_dimensionless
+                    for arg in args
+                ):
+                    raise DimensionError(
+                        f"Function {expression.func} requires "
+                        "dimensionless arguments"
+                    )
+
+                raw_args = [
+                    arg.expression
+                    if isinstance(arg, SymbolicQuantity)
+                    else arg
+                    for arg in args
+                ]
+
+                return SymbolicQuantity(
+                    expression.func(*raw_args),
+                    symbol_dimensions=self._merge_symbol_dimensions(args),
+                )
+
+            return expression.func(*args)
+
+        return expression
+
+    @staticmethod
+    def _merge_symbol_dimensions(values):
+        result = {}
+
+        for value in values:
+            if isinstance(value, SymbolicQuantity):
+                result = SymbolicQuantity._merge_dimensions(
+                    result,
+                    value.symbol_dimensions,
+                )
+
+        return result
+
+    def evaluate(self, source):
+        try:
+            expression = self.parser.parse_expression(source)
+
+            symbols = {
+                str(symbol)
+                for symbol in expression.free_symbols
+            }
+
+            variables = self.variables.as_dict()
+
+            has_symbolic_quantity = any(
+                isinstance(variables.get(name), SymbolicQuantity)
+                for name in symbols
+            )
+
+            if has_symbolic_quantity:
+                result = self._evaluate_symbolic_expression(
+                    expression,
+                    variables,
+                )
+
+                if isinstance(result, SymbolicQuantity):
+                    return result
+
+                if result.free_symbols:
+                    unknown = sorted(
+                        str(symbol)
+                        for symbol in result.free_symbols
+                    )
+                    raise EvaluationError(
+                        "Неизвестные переменные: " + ", ".join(unknown)
+                    )
+
+                return result
+
+            has_quantity = any(
+                isinstance(variables.get(name), Quantity)
+                for name in symbols
+            )
+
+            has_unit = any(
+                is_unit(name) and name not in variables
+                for name in symbols
+            )
+
+            # Физические выражения обрабатываем ДО SymPy-подстановок.
+            if has_quantity or has_unit:
+                return QuantityExpressionEvaluator(
+                    variables=variables,
+                    functions=self._quantity_function_callbacks(),
+                ).evaluate(source)
+
+            # Обычный путь SymPy.
+            substitutions = {
+                sp.Symbol(name): value
+                for name, value in variables.items()
+                if not isinstance(value, Quantity)
+            }
+
+            expression = expression.subs(substitutions)
+
+            if expression.free_symbols:
+                unknown = sorted(
+                    str(symbol)
+                    for symbol in expression.free_symbols
+                )
+                raise EvaluationError(
+                    "Неизвестные переменные: " + ", ".join(unknown)
+                )
+
+            if expression.is_number:
+                return float(sp.N(expression))
+
+            return expression
+
+        except (EvaluationError, DimensionError):
+            raise
+
+        except Exception as exc:
+            raise EvaluationError(str(exc)) from exc
+
+    # -------------------------------------------------
+    # ВЫЗОВ ПОЛЬЗОВАТЕЛЬСКОЙ ФУНКЦИИ
+    # -------------------------------------------------
+
+
+
+    def call(self, name, *args, **kwargs):
+        if name not in self.functions:
+            raise EvaluationError(f"Unknown function: {name}")
+
+        definition = self.functions[name]
+        argument_names = [str(arg) for arg in definition.arguments]
+        defaults = {
+            str(key): value
+            for key, value in definition.defaults.items()
+        }
+
+        if len(args) > len(argument_names):
+            raise EvaluationError(
+                f"Too many arguments for function '{name}'"
+            )
+
+        provided = dict(zip(argument_names, args))
+
+        for key, value in kwargs.items():
+            if key not in argument_names:
+                raise EvaluationError(
+                    f"Unknown argument '{key}' for function '{name}'"
+                )
+
+            if key in provided:
+                raise EvaluationError(
+                    f"Multiple values for argument '{key}'"
+                )
+
+            provided[key] = value
+
+        ordered_args = []
+
+        global_values = {
+            sp.Symbol(key): value
+            for key, value in self.variables.as_dict().items()
+            if not isinstance(value, (Quantity, SymbolicQuantity))
+        }
+
+        for argument in argument_names:
+            if argument in provided:
+                value = provided[argument]
+
+            elif argument in defaults:
+                value = defaults[argument]
+
+                if isinstance(value, sp.Basic):
+                    value = value.subs(global_values)
+
+                    if value.free_symbols:
+                        raise EvaluationError(
+                            f"Unresolved default argument '{argument}' "
+                            f"in function '{name}'"
+                        )
+
+                    if value.is_number:
+                        value = float(sp.N(value))
+
+            else:
+                raise EvaluationError(
+                    f"Missing argument '{argument}' for function '{name}'"
+                )
+
+            ordered_args.append(value)
+
+
+        global_variables = self.variables.as_dict()
+
+        has_symbolic_argument = any(
+            isinstance(value, SymbolicQuantity)
+            for value in ordered_args
+        )
+
+        has_symbolic_global = any(
+            isinstance(global_variables.get(str(symbol)), SymbolicQuantity)
+            for symbol in definition.expression.free_symbols
+        )
+
+        if has_symbolic_argument or has_symbolic_global:
+            symbolic_variables = dict(global_variables)
+            symbolic_variables.update(
+                dict(zip(argument_names, ordered_args))
+            )
+
+            return self._evaluate_symbolic_expression(
+                definition.expression,
+                symbolic_variables,
+            )
+
+        has_quantity_argument = any(
+            isinstance(value, Quantity)
+            for value in ordered_args
+        )
+
+        has_quantity_global = any(
+            isinstance(global_variables.get(str(symbol)), Quantity)
+            for symbol in definition.expression.free_symbols
+        )
+
+        if has_quantity_argument or has_quantity_global:
+            return self._quantity_function(name, *ordered_args)
+
+
+
+        try:
+            for index, value in enumerate(ordered_args):
+                try:
+                    finite = np.all(np.isfinite(value))
+                except (TypeError, ValueError):
+                    continue
+
+                if not bool(finite):
+                    raise EvaluationError(
+                        f"Non-finite argument '{argument_names[index]}' "
+                        f"in function '{name}'"
+                    )
+
+            with np.errstate(
+                invalid="raise",
+                divide="raise",
+                over="raise",
+            ):
+                result = self.compiled_functions[name](*ordered_args)
+
+            try:
+                finite = np.all(np.isfinite(result))
+            except (TypeError, ValueError):
+                finite = True
+
+            if not bool(finite):
+                raise EvaluationError(
+                    f"Non-finite result from function '{name}'"
+                )
+
+            return result
+
+        except EvaluationError:
+            raise
+        except Exception as exc:
+            raise EvaluationError(
+                f"Numerical error in function '{name}': {exc}"
+            ) from exc
+
+
+    # -------------------------------------------------
+    # МАТЕМАТИЧЕСКИЙ АНАЛИЗ
+    # -------------------------------------------------
+
+    def _prepare_calculus_expression(self, source):
+        expression = self.parser.parse_expression(source)
+
+        substitutions = {
+            sp.Symbol(name): value
+            for name, value in self.variables.as_dict().items()
+        }
+
+        return expression.subs(substitutions)
+
+
+    def differentiate(self, source, variable, order=1):
+        try:
+            expression = self.parser.parse_expression(source)
+
+            variable_name = str(variable)
+            variable_symbol = sp.Symbol(variable_name)
+
+            # Сначала дифференцируем символическое выражение.
+            result = differentiate(
+                expression,
+                variable_symbol,
+                order,
+            )
+
+            variables = self.variables.as_dict()
+
+            has_symbolic_quantity = any(
+                isinstance(variables.get(str(symbol)), SymbolicQuantity)
+                for symbol in expression.free_symbols
+            )
+
+            if has_symbolic_quantity:
+                symbolic_expression = self._evaluate_symbolic_expression(
+                    expression,
+                    variables,
+                )
+
+                if isinstance(symbolic_expression, SymbolicQuantity):
+                    return symbolic_expression.diff(
+                        variable_symbol,
+                        order,
+                    )
+
+            # Определяем, требуется ли физическое вычисление.
+            has_quantity = any(
+                isinstance(variables.get(str(symbol)), Quantity)
+                for symbol in result.free_symbols
+            )
+
+            has_unit = any(
+                is_unit(str(symbol))
+                and str(symbol) not in variables
+                for symbol in result.free_symbols
+            )
+
+            if has_quantity or has_unit:
+                evaluator = QuantityExpressionEvaluator(
+                    variables=variables,
+                    functions=self._quantity_function_callbacks(),
+                )
+
+                return evaluator.evaluate(str(result))
+
+            # Обычный путь SymPy.
+            substitutions = {
+                sp.Symbol(name): value
+                for name, value in variables.items()
+                if not isinstance(value, (Quantity, SymbolicQuantity))
+                and name != variable_name
+            }
+
+            result = result.subs(substitutions)
+
+            if not result.free_symbols and result.is_number:
+                return float(sp.N(result))
+
+            return result
+
+        except DimensionError:
+            raise
+
+        except ParseError:
+            raise
+
+        except (EvaluationError, DimensionError):
+            raise
+
+        except Exception as exc:
+            raise EvaluationError(str(exc)) from exc
+
+
+    
+    def integrate(
+        self,
+        source,
+        variable="x",
+        lower=None,
+        upper=None,
+        numerical=True,
+    ):
+        try:
+            expression = self.parser.parse_expression(source)
+            symbol = sp.Symbol(variable)
+            variables = self.variables.as_dict()
+
+            has_symbolic_quantity = any(
+                isinstance(variables.get(str(item)), SymbolicQuantity)
+                for item in expression.free_symbols
+            )
+
+            if has_symbolic_quantity:
+                symbolic_expression = self._evaluate_symbolic_expression(
+                    expression,
+                    variables,
+                )
+
+                if isinstance(symbolic_expression, SymbolicQuantity):
+                    return symbolic_expression.integrate(
+                        symbol,
+                        lower,
+                        upper,
+                    )
+
+            if lower is None and upper is None:
+                return integrate(expression, symbol)
+
+            if lower is None or upper is None:
+                raise ParseError(
+                    "Необходимо указать оба предела интегрирования"
+                )
+
+            # Определяем, требуется ли физическое вычисление.
+            has_quantity = any(
+                isinstance(variables.get(str(item)), Quantity)
+                for item in expression.free_symbols
+            )
+
+            has_unit = any(
+                is_unit(str(item)) and str(item) not in variables
+                for item in expression.free_symbols
+            )
+
+            physical_bounds = (
+                isinstance(lower, Quantity)
+                or isinstance(upper, Quantity)
+            )
+
+            if not (has_quantity or has_unit or physical_bounds):
+                lower = float(lower)
+                upper = float(upper)
+
+                result = integrate(
+                    expression,
+                    symbol,
+                    lower,
+                    upper,
+                )
+
+                if not result.has(sp.Integral):
+                    return float(sp.N(result))
+
+                if not numerical:
+                    return result
+
+                return numerical_integral(
+                    expression,
+                    symbol,
+                    lower,
+                    upper,
+                )
+
+            # Физический путь.
+            if isinstance(lower, Quantity) != isinstance(upper, Quantity):
+                raise DimensionError(
+                    "Оба предела должны иметь одинаковый тип"
+                )
+
+            if isinstance(lower, Quantity):
+                if lower.dimension != upper.dimension:
+                    raise DimensionError(
+                        "Размерности пределов интегрирования несовместимы"
+                    )
+
+                lower_value = float(lower.value)
+                upper_value = float(upper.value)
+                variable_dimension = lower.dimension
+            else:
+                lower_value = float(lower)
+                upper_value = float(upper)
+                variable_dimension = None
+
+            evaluator = QuantityExpressionEvaluator(
+                variables=variables,
+                functions=self._quantity_function_callbacks(),
+            )
+
+            integrand_dimension = None
+
+            def integrand(value):
+                nonlocal integrand_dimension
+
+                if variable_dimension is None:
+                    variable_value = value
+                else:
+                    variable_value = Quantity(
+                        value,
+                        variable_dimension,
+                    )
+
+                local_evaluator = QuantityExpressionEvaluator(
+                    variables={
+                        **variables,
+                        variable: variable_value,
+                    },
+                    functions=self._quantity_function_callbacks(),
+                )
+
+                result = local_evaluator.evaluate(source)
+
+                if isinstance(result, Quantity):
+                    if integrand_dimension is None:
+                        integrand_dimension = result.dimension
+                    elif integrand_dimension != result.dimension:
+                        raise DimensionError(
+                            "Размерность подынтегрального выражения изменилась"
+                        )
+
+                    return float(result.value)
+
+                if integrand_dimension is None:
+                    integrand_dimension = None
+
+                return float(result)
+
+            result_value, _ = quad(
+                integrand,
+                lower_value,
+                upper_value,
+            )
+
+            if integrand_dimension is None:
+                if variable_dimension is None:
+                    return float(result_value)
+
+                return Quantity(
+                    result_value,
+                    variable_dimension,
+                )
+
+            if variable_dimension is not None:
+                result_dimension = (
+                    integrand_dimension * variable_dimension
+                )
+            else:
+                result_dimension = integrand_dimension
+
+            return Quantity(
+                result_value,
+                result_dimension,
+            )
+
+        except (ParseError, EvaluationError, DimensionError):
+            raise
+
+        except Exception as exc:
+            raise EvaluationError(str(exc)) from exc
+
+
+    def cumulative(
+        self,
+        source,
+        values,
+        variable="x",
+        start=0,
+    ):
+        try:
+            expression = self.parser.parse_expression(source)
+            symbol = sp.Symbol(variable)
+            variables = self.variables.as_dict()
+
+            values = list(values)
+
+            # Определяем, требуется ли физическое вычисление.
+            has_quantity = any(
+                isinstance(variables.get(str(item)), Quantity)
+                for item in expression.free_symbols
+            )
+
+            has_unit = any(
+                is_unit(str(item)) and str(item) not in variables
+                for item in expression.free_symbols
+            )
+
+            has_quantity_coordinates = (
+                isinstance(start, Quantity)
+                or any(isinstance(value, Quantity) for value in values)
+            )
+
+            if not (has_quantity or has_unit or has_quantity_coordinates):
+                return numerical_cumulative_integral(
+                    expression,
+                    symbol,
+                    start,
+                    values,
+                    parameters={
+                        name: value
+                        for name, value in variables.items()
+                        if not isinstance(value, (Quantity, SymbolicQuantity))
+                    },
+                )
+
+            # Определяем размерность координаты.
+            coordinate_quantities = [
+                value
+                for value in [start, *values]
+                if isinstance(value, Quantity)
+            ]
+
+            coordinate_dimension = (
+                coordinate_quantities[0].dimension
+                if coordinate_quantities
+                else None
+            )
+
+            for value in coordinate_quantities:
+                if value.dimension != coordinate_dimension:
+                    raise DimensionError(
+                        "Размерности координат интегрирования несовместимы"
+                    )
+
+            def numeric_value(value):
+                if isinstance(value, Quantity):
+                    return float(value.value)
+                return float(value)
+
+            start_value = numeric_value(start)
+
+            numeric_values = np.asarray(
+                [numeric_value(value) for value in values],
+                dtype=float,
+            )
+
+            if not np.all(np.isfinite(numeric_values)):
+                raise EvaluationError(
+                    "Массив содержит NaN или бесконечные значения"
+                )
+
+            grid = np.concatenate(([start_value], numeric_values))
+
+            differences = np.diff(grid)
+
+            if not (
+                np.all(differences >= 0)
+                or np.all(differences <= 0)
+            ):
+                raise EvaluationError(
+                    "Значения координаты должны идти в монотонном порядке"
+                )
+
+            # Вычисляем подынтегральное выражение в начальной точке,
+            # чтобы определить его размерность даже для пустого массива.
+            initial_variables = {
+                **variables,
+                variable: (
+                    Quantity(start_value, coordinate_dimension)
+                    if coordinate_dimension is not None
+                    else start_value
+                ),
+            }
+
+            initial_evaluator = QuantityExpressionEvaluator(
+                variables=initial_variables,
+                functions=self._quantity_function_callbacks(),
+            )
+
+            initial_result = initial_evaluator.evaluate(source)
+
+            integrand_dimension = (
+                initial_result.dimension
+                if isinstance(initial_result, Quantity)
+                else None
+            )
+
+            # Вычисляем выражение сразу для всего массива координат.
+            local_variables = {
+                **variables,
+                variable: (
+                    Quantity(numeric_values, coordinate_dimension)
+                    if coordinate_dimension is not None
+                    else numeric_values
+                ),
+            }
+
+            evaluator = QuantityExpressionEvaluator(
+                variables=local_variables,
+                functions=self._quantity_function_callbacks(),
+            )
+
+            result = evaluator.evaluate(source)
+
+            if isinstance(result, Quantity):
+                if (
+                    integrand_dimension is not None
+                    and result.dimension != integrand_dimension
+                ):
+                    raise DimensionError(
+                        "Размерность выражения изменилась"
+                    )
+
+                integrand_values = np.asarray(
+                    result.value,
+                    dtype=float,
+                )
+            else:
+                integrand_values = np.asarray(result, dtype=float)
+
+            if integrand_values.ndim == 0:
+                integrand_values = np.full(
+                    len(grid),
+                    float(integrand_values),
+                )
+
+            if not np.all(np.isfinite(integrand_values)):
+                raise EvaluationError(
+                    "Подынтегральная функция вернула NaN или бесконечность"
+                )
+
+            if len(integrand_values) != len(grid):
+                raise EvaluationError(
+                    "Количество значений функции не совпадает с количеством координат"
+                )
+
+            integrated_values = cumulative_trapezoid(
+                integrand_values,
+                x=grid,
+                initial=0.0,
+            )
+
+            # Определяем размерность результата.
+            result_dimension = integrand_dimension
+
+            if coordinate_dimension is not None:
+                if result_dimension is None:
+                    result_dimension = coordinate_dimension
+                else:
+                    result_dimension = (
+                        result_dimension * coordinate_dimension
+                    )
+
+            if result_dimension is None:
+                return integrated_values
+
+            return Quantity(
+                integrated_values[1:],
+                result_dimension,
+            )
+
+        except (ParseError, EvaluationError, DimensionError):
+            raise
+
+        except Exception as exc:
+            raise EvaluationError(str(exc)) from exc
+
+    # -------------------------------------------------
+    # ИНФОРМАЦИЯ О ДВИЖКЕ
+    # -------------------------------------------------
+
+    def get_variable(self, name):
+        if not self.variables.has(name):
+            raise EvaluationError(
+                f"Переменная '{name}' не найдена"
+            )
+
+        return self.variables.get(name)
+
+    def get_function_names(self):
+        return tuple(self.functions.keys())
+
+    def get_variable_names(self):
+        return self.variables.names()
+
+    def get_definition(self, name):
+        return self.definitions.get(name)
+
+        
+    def _quantity_function(self, name, *args, **kwargs):
+        if name not in self.functions:
+            raise EvaluationError(f"Unknown function: {name}")
+
+        definition = self.functions[name]
+        argument_names = list(definition.arguments)
+
+        if len(args) > len(argument_names):
+            raise EvaluationError(
+                f"Too many arguments for function '{name}'"
+            )
+
+        local_variables = dict(zip(argument_names, args))
+
+        for key, value in kwargs.items():
+            if key not in argument_names:
+                raise EvaluationError(
+                    f"Unknown argument '{key}' for function '{name}'"
+                )
+
+            if key in local_variables:
+                raise EvaluationError(
+                    f"Multiple values for argument '{key}'"
+                )
+
+            local_variables[key] = value
+
+        evaluator = QuantityExpressionEvaluator(
+            variables=self.variables.as_dict(),
+            functions=self._quantity_function_callbacks(),
+        )
+
+        for argument in argument_names:
+            if argument not in local_variables:
+                if argument not in definition.defaults:
+                    raise EvaluationError(
+                        f"Missing argument '{argument}' "
+                        f"for function '{name}'"
+                    )
+
+                default = definition.defaults[argument]
+
+                if isinstance(default, sp.Expr):
+                    default = evaluator.evaluate(str(default))
+
+                local_variables[argument] = default
+
+        _, source = self.parser._split_assignment(definition.source)
+
+        evaluator.variables.update(local_variables)
+
+        return evaluator.evaluate(source)
+
+
+    def _quantity_function_callbacks(self):
+        return {
+            name: (
+                lambda *args, _name=name, **kwargs:
+                self._quantity_function(_name, *args, **kwargs)
+            )
+            for name in self.functions
+        }
+
+
+======================== core/errors.py ========================
+class MathLabError(Exception):
+    """Базовая ошибка MathLab."""
+
+
+class ParseError(MathLabError):
+    """Ошибка синтаксиса выражения."""
+
+
+class EvaluationError(MathLabError):
+    """Ошибка вычисления."""
+
+
+class DependencyError(MathLabError):
+    """Ошибка зависимостей между выражениями."""
+
+
+class UnknownNameError(ParseError):
+    """Неизвестная функция или некорректное обращение к имени."""
+
+
+class DimensionError(MathLabError):
+    """Ошибка физической размерности."""
+
+
+======================== core/parser.py ========================
+import ast
+import re
+from dataclasses import dataclass, field
+
+import sympy as sp
+
+from .errors import ParseError, UnknownNameError
+
+from .calculus import (
+    differentiate,
+    integrate,
+    cumulative_integral,
+)
+
+BUILTIN_FUNCTIONS = {
+    "sin": sp.sin,
+    "cos": sp.cos,
+    "tan": sp.tan,
+    "asin": sp.asin,
+    "acos": sp.acos,
+    "atan": sp.atan,
+    "sinh": sp.sinh,
+    "cosh": sp.cosh,
+    "tanh": sp.tanh,
+    "sqrt": sp.sqrt,
+    "abs": sp.Abs,
+    "ln": sp.log,
+    "log": sp.log,
+    "exp": sp.exp,
+}
+
+
+@dataclass
+class VariableDefinition:
+    name: str
+    expression: sp.Expr
+    source: str
+
+
+@dataclass
+class FunctionDefinition:
+    name: str
+    arguments: tuple[str, ...]
+    defaults: dict[str, sp.Expr]
+    expression: sp.Expr
+    source: str
+
+
+@dataclass
+class ParsedExpression:
+    definition: VariableDefinition | FunctionDefinition
+
+
+class ExpressionParser:
+    def __init__(self):
+        self.functions = {}
+
+    @staticmethod
+    def _split_assignment(source: str):
+        depth = 0
+
+        for index, char in enumerate(source):
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            elif char == "=" and depth == 0:
+                before = source[index - 1] if index else ""
+                after = source[index + 1] if index + 1 < len(source) else ""
+
+                if before in "<>=!" or after == "=":
+                    continue
+
+                return source[:index].strip(), source[index + 1:].strip()
+
+        return None, source.strip()
+
+    def parse_definition(self, source: str) -> ParsedExpression:
+        source = source.strip()
+
+        if not source:
+            raise ParseError("Пустое выражение")
+
+        left, right = self._split_assignment(source)
+
+        if left is None:
+            raise ParseError(
+                "Ожидается определение вида a = выражение"
+            )
+
+        if not right:
+            raise ParseError("Правая часть выражения пуста")
+
+        try:
+            left_ast = ast.parse(left, mode="eval").body
+        except SyntaxError as exc:
+            raise ParseError(f"Некорректное определение: {exc.msg}") from exc
+
+        if isinstance(left_ast, ast.Name):
+            expression = self.parse_expression(right)
+
+            definition = VariableDefinition(
+                name=left_ast.id,
+                expression=expression,
+                source=source,
+            )
+
+            return ParsedExpression(definition)
+
+        if isinstance(left_ast, ast.Call):
+            return ParsedExpression(
+                self._parse_function(left_ast, right, source)
+            )
+
+        raise ParseError(
+            "Слева от '=' должно быть имя переменной или функции"
+        )
+
+    def _parse_function(self, signature, right, source):
+        if not isinstance(signature.func, ast.Name):
+            raise ParseError("Некорректное имя функции")
+
+        name = signature.func.id
+
+        arguments = []
+        defaults = {}
+
+        for argument in signature.args:
+            if not isinstance(argument, ast.Name):
+                raise ParseError("Аргументы функции должны быть именами")
+
+            arguments.append(argument.id)
+
+        for keyword in signature.keywords:
+            if keyword.arg is None:
+                raise ParseError("Распаковка аргументов не поддерживается")
+
+            if keyword.arg in arguments:
+                raise ParseError(
+                    f"Аргумент {keyword.arg} объявлен дважды"
+                )
+
+            defaults[keyword.arg] = self.parse_expression(
+                ast.unparse(keyword.value)
+            )
+
+        all_arguments = arguments + list(defaults)
+
+        if len(set(all_arguments)) != len(all_arguments):
+            raise ParseError("Повторяющиеся аргументы функции")
+
+        if not arguments and not defaults:
+            raise ParseError("У функции должен быть хотя бы один аргумент")
+
+        symbols = {
+            argument: sp.Symbol(argument)
+            for argument in all_arguments
+        }
+
+        expression = self.parse_expression(
+            right,
+            local_symbols=symbols,
+        )
+
+        return FunctionDefinition(
+            name=name,
+            arguments=tuple(all_arguments),
+            defaults=defaults,
+            expression=expression,
+            source=source,
+        )
+
+    def parse_expression(self, source, local_symbols=None):
+        source = source.replace("^", "**")
+
+        try:
+            tree = ast.parse(source, mode="eval")
+        except SyntaxError as exc:
+            raise ParseError(f"Ошибка синтаксиса: {exc.msg}") from exc
+
+        converter = _ExpressionConverter(
+            functions=self.functions,
+            local_symbols=local_symbols or {},
+        )
+
+        try:
+            return converter.convert(tree.body)
+        except ParseError:
+            raise
+        except Exception as exc:
+            raise ParseError(str(exc)) from exc
+
+    def register_function(self, definition):
+        self.functions[definition.name] = definition
+
+
+class _ExpressionConverter:
+    def __init__(self, functions, local_symbols):
+        self.functions = functions
+        self.local_symbols = local_symbols
+
+    
+    def convert(self, node):
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, bool):
+                raise ParseError("Логические значения не поддерживаются")
+
+            if isinstance(node.value, (int, float)):
+                return sp.sympify(node.value)
+
+            raise ParseError("Поддерживаются только числовые константы")
+
+        if isinstance(node, ast.Name):
+            if node.id == "pi":
+                return sp.pi
+
+            if node.id == "e":
+                return sp.E
+
+            if node.id in self.local_symbols:
+                return self.local_symbols[node.id]
+
+            return sp.Symbol(node.id)
+
+        if isinstance(node, ast.BinOp):
+            left = self.convert(node.left)
+            right = self.convert(node.right)
+
+            operations = {
+                ast.Add: lambda: left + right,
+                ast.Sub: lambda: left - right,
+                ast.Mult: lambda: left * right,
+                ast.Div: lambda: left / right,
+                ast.Pow: lambda: left ** right,
+                ast.Mod: lambda: left % right,
+            }
+
+            operation = operations.get(type(node.op))
+
+            if operation is None:
+                raise ParseError("Неподдерживаемая операция")
+
+            return operation()
+
+        if isinstance(node, ast.UnaryOp):
+            value = self.convert(node.operand)
+
+            if isinstance(node.op, ast.UAdd):
+                return value
+
+            if isinstance(node.op, ast.USub):
+                return -value
+
+            raise ParseError("Неподдерживаемая унарная операция")
+
+        if isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name):
+                raise ParseError("Допускаются только прямые вызовы функций")
+
+            name = node.func.id
+
+            # Специальные операции математического анализа.
+            # Обрабатываем AST непосредственно, чтобы переменная
+            # интегрирования не превращалась в обычное выражение.
+
+            if name == "derivative":
+                if len(node.args) not in (2, 3) or node.keywords:
+                    raise ParseError(
+                        "Синтаксис: derivative(f(x), x, order)"
+                    )
+
+                expression = self.convert(node.args[0])
+                variable_node = node.args[1]
+
+                if not isinstance(variable_node, ast.Name):
+                    raise ParseError("Переменная производной должна быть именем")
+
+                order = (
+                    self.convert(node.args[2])
+                    if len(node.args) == 3
+                    else 1
+                )
+
+                return differentiate(
+                    expression,
+                    sp.Symbol(variable_node.id),
+                    order,
+                )
+
+            if name == "integral":
+                if node.keywords or len(node.args) not in (2, 4):
+                    raise ParseError(
+                        "Синтаксис: integral(f(x), x) "
+                        "или integral(f(x), x, a, b)"
+                    )
+
+                expression = self.convert(node.args[0])
+                variable_node = node.args[1]
+
+                if not isinstance(variable_node, ast.Name):
+                    raise ParseError("Переменная интегрирования должна быть именем")
+
+                variable = sp.Symbol(variable_node.id)
+
+                if len(node.args) == 2:
+                    return integrate(expression, variable)
+
+                lower = self.convert(node.args[2])
+                upper = self.convert(node.args[3])
+
+                return integrate(expression, variable, lower, upper)
+
+            if name == "cumulative":
+                if len(node.args) != 3 or node.keywords:
+                    raise ParseError(
+                        "Синтаксис: cumulative(f(x), x, start)"
+                    )
+
+                expression = self.convert(node.args[0])
+                variable_node = node.args[1]
+
+                if not isinstance(variable_node, ast.Name):
+                    raise ParseError("Переменная интегрирования должна быть именем")
+
+                start = self.convert(node.args[2])
+
+                return cumulative_integral(
+                    expression,
+                    sp.Symbol(variable_node.id),
+                    start,
+                )
+
+            # Обычные аргументы функций.
+            args = [self.convert(arg) for arg in node.args]
+
+            if name in BUILTIN_FUNCTIONS:
+                if node.keywords:
+                    raise ParseError("Именованные аргументы не поддерживаются")
+
+                try:
+                    return BUILTIN_FUNCTIONS[name](*args)
+                except TypeError as exc:
+                    raise ParseError(str(exc)) from exc
+
+            if name in self.functions:
+                return self._call_user_function(
+                    self.functions[name],
+                    args,
+                    node.keywords,
+                )
+
+            raise UnknownNameError(f"Неизвестная функция: {name}")
+
+        raise ParseError(
+            f"Неподдерживаемая конструкция: {type(node).__name__}"
+        )
+
+
+    def _call_user_function(self, definition, args, keywords):
+        values = {}
+
+        if len(args) > len(definition.arguments):
+            raise ParseError(
+                f"Функция {definition.name}: слишком много аргументов"
+            )
+
+        for name, value in zip(definition.arguments, args):
+            values[name] = value
+
+        for keyword in keywords:
+            if keyword.arg not in definition.arguments:
+                raise ParseError(
+                    f"Неизвестный аргумент: {keyword.arg}"
+                )
+
+            if keyword.arg in values:
+                raise ParseError(
+                    f"Аргумент {keyword.arg} передан дважды"
+                )
+
+            values[keyword.arg] = self.convert(keyword.value)
+
+        for name, default in definition.defaults.items():
+            values.setdefault(name, default)
+
+        missing = [
+            name for name in definition.arguments
+            if name not in values
+        ]
+
+        if missing:
+            raise ParseError(
+                f"Не переданы аргументы: {', '.join(missing)}"
+            )
+
+        symbols = {
+            name: sp.Symbol(name)
+            for name in definition.arguments
+        }
+
+        substitutions = {
+            symbols[name]: value
+            for name, value in values.items()
+        }
+
+        return definition.expression.subs(substitutions)
+
+
+======================== core/variables.py ========================
+class VariableStore:
+    def __init__(self):
+        self._values = {}
+
+    def set(self, name, value):
+        self._values[name] = value
+
+    def get(self, name):
+        return self._values[name]
+
+    def has(self, name):
+        return name in self._values
+
+    def remove(self, name):
+        self._values.pop(name, None)
+
+    def clear(self):
+        self._values.clear()
+
+    def names(self):
+        return tuple(self._values.keys())
+
+    def as_dict(self):
+        return dict(self._values)
+
+    def update(self, values):
+        self._values.update(values)
+
+    def __contains__(self, name):
+        return self.has(name)
+
+    def __getitem__(self, name):
+        return self.get(name)
+
+    def __len__(self):
+        return len(self._values)
+
+
+======================== tests/test_calculus.py ========================
+import numpy as np
+import sympy as sp
+import pytest
+
+from core import MathEngine
+from core.errors import ParseError
+
+
+def test_first_derivative():
+    engine = MathEngine()
+
+    result = engine.differentiate("x^3", "x")
+    x = sp.Symbol("x")
+
+    assert sp.simplify(result - 3*x**2) == 0
+
+
+def test_second_derivative():
+    engine = MathEngine()
+
+    result = engine.differentiate("x^4", "x", 2)
+    x = sp.Symbol("x")
+
+    assert sp.simplify(result - 12*x**2) == 0
+
+
+def test_indefinite_integral():
+    engine = MathEngine()
+
+    result = engine.integrate("x^2", "x")
+    x = sp.Symbol("x")
+
+    assert sp.simplify(result - x**3 / 3) == 0
+
+
+def test_definite_integral():
+    engine = MathEngine()
+
+    result = engine.integrate("x^2", "x", 0, 3)
+
+    assert result == pytest.approx(9.0)
+
+
+def test_derivative_of_user_function():
+    engine = MathEngine()
+
+    engine.set_lines([
+        "f(x) = x^3",
+        "df(x) = derivative(f(x), x)",
+    ])
+
+    assert engine.call("df", 2) == pytest.approx(12.0)
+
+
+def test_second_derivative_in_formula():
+    engine = MathEngine()
+
+    engine.set_lines([
+        "f(x) = x^4",
+        "ddf(x) = derivative(f(x), x, 2)",
+    ])
+
+    assert engine.call("ddf", 2) == pytest.approx(48.0)
+
+
+def test_integral_in_formula():
+    engine = MathEngine()
+
+    engine.set_lines([
+        "f(x) = x^2",
+        "F(x) = integral(f(x), x)",
+    ])
+
+    assert engine.call("F", 3) == pytest.approx(9.0)
+
+
+def test_cumulative_symbolic():
+    engine = MathEngine()
+
+    engine.set_lines([
+        "f(x) = x^2",
+        "F(x) = cumulative(f(x), x, 0)",
+    ])
+
+    assert engine.call("F", 3) == pytest.approx(9.0)
+
+
+def test_numerical_cumulative():
+    engine = MathEngine()
+
+    values = np.array([0, 1, 2, 3], dtype=float)
+
+    result = engine.cumulative(
+        "2*x",
+        values,
+        start=0,
+    )
+
+    expected = np.array([0, 1, 4, 9], dtype=float)
+
+    assert np.allclose(result, expected)
+
+
+def test_empty_cumulative():
+    engine = MathEngine()
+
+    result = engine.cumulative(
+        "x",
+        np.array([]),
+    )
+
+    assert len(result) == 0
+
+
+def test_invalid_derivative_order():
+    engine = MathEngine()
+
+    with pytest.raises(ParseError):
+        engine.differentiate("x^2", "x", 0)
+
+
+======================== tests/test_constants.py ========================
+
+import pytest
+
+from units.constants import (
+    C,
+    E_CHARGE,
+    H,
+    HBAR,
+    K_B,
+    N_A,
+    G,
+    EPSILON_0,
+    MU_0,
+    M_ELECTRON,
+    M_PROTON,
+    M_NEUTRON,
+    CONSTANTS,
+    get_constant,
+    ACTION,
+    PERMITTIVITY,
+    PERMEABILITY,
+    GRAVITATIONAL_CONSTANT_DIM,
+    BOLTZMANN_CONSTANT_DIM,
+)
+
+from units.dimensions import (
+    LENGTH,
+    TIME,
+    MASS,
+    CHARGE,
+    AMOUNT,
+    DIMENSIONLESS,
+)
+
+
+def test_speed_of_light():
+    assert C.value == 299792458
+    assert C.dimension == LENGTH / TIME
+
+
+def test_elementary_charge():
+    assert E_CHARGE.value == pytest.approx(1.602176634e-19)
+    assert E_CHARGE.dimension == CHARGE
+
+
+def test_planck_constants():
+    assert H.dimension == ACTION
+    assert HBAR.dimension == ACTION
+    assert HBAR.value == pytest.approx(H.value / (2 * 3.141592653589793))
+
+
+def test_boltzmann_constant():
+    assert K_B.dimension == BOLTZMANN_CONSTANT_DIM
+    assert K_B.value == pytest.approx(1.380649e-23)
+
+
+def test_avogadro_constant():
+    assert N_A.dimension == DIMENSIONLESS / AMOUNT
+    assert N_A.value == pytest.approx(6.02214076e23)
+
+
+def test_gravitational_constant():
+    assert G.dimension == GRAVITATIONAL_CONSTANT_DIM
+    assert G.value == pytest.approx(6.67430e-11)
+
+
+def test_vacuum_constants():
+    assert EPSILON_0.dimension == PERMITTIVITY
+    assert MU_0.dimension == PERMEABILITY
+
+
+def test_particle_masses():
+    assert M_ELECTRON.dimension == MASS
+    assert M_PROTON.dimension == MASS
+    assert M_NEUTRON.dimension == MASS
+
+    assert M_ELECTRON.value == pytest.approx(9.1093837139e-31)
+    assert M_PROTON.value == pytest.approx(1.67262192595e-27)
+
+
+def test_registry():
+    assert get_constant("c") is C
+    assert get_constant("h") is H
+    assert get_constant("m_e") is M_ELECTRON
+
+
+def test_unknown_constant():
+    with pytest.raises(KeyError):
+        get_constant("unknown")
+
+
+def test_registry_is_immutable():
+    with pytest.raises(TypeError):
+        CONSTANTS["new"] = C
+
+
+======================== tests/test_dimensions.py ========================
+
+import pytest
+
+from units.dimensions import (
+    DIMENSIONLESS,
+    LENGTH,
+    MASS,
+    TIME,
+    VELOCITY,
+    ACCELERATION,
+    FORCE,
+    ENERGY,
+    POWER,
+    CHARGE,
+    Dimension,
+)
+
+
+def test_base_dimensions():
+    assert LENGTH != MASS
+    assert TIME != LENGTH
+    assert DIMENSIONLESS.is_dimensionless
+
+
+def test_multiplication():
+    assert LENGTH * LENGTH == LENGTH ** 2
+
+
+def test_division():
+    assert LENGTH / TIME == VELOCITY
+
+
+def test_power():
+    assert LENGTH ** 2 == Dimension.from_mapping({"L": 2})
+
+
+def test_fractional_power():
+    assert LENGTH ** 0.5 == LENGTH ** 0.5
+
+
+def test_derived_dimensions():
+    assert FORCE == MASS * ACCELERATION
+    assert ENERGY == FORCE * LENGTH
+    assert POWER == ENERGY / TIME
+
+
+def test_charge():
+    assert CHARGE == Dimension.from_mapping({
+        "I": 1,
+        "T": 1,
+    })
+
+
+def test_dimensionless():
+    assert (LENGTH / LENGTH).is_dimensionless
+
+
+def test_invalid_base_dimension():
+    with pytest.raises(ValueError):
+        Dimension.base("X")
+
+
+def test_invalid_number_of_exponents():
+    with pytest.raises(ValueError):
+        Dimension((1, 2, 3))
+
+
+======================== tests/test_engine_nested_symbolic_functions.py ========================
+import sympy as sp
+import pytest
+
+from core import MathEngine
+from core.errors import DimensionError
+from units.dimensions import LENGTH, TIME
+from units.quantities import SymbolicQuantity
+
+
+def test_nested_symbolic_functions():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x) = x**2",
+        "g(x) = f(x) + x**2",
+    ]
+    engine._rebuild()
+
+    result = engine.call("g", engine.variables.get("x"))
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == 2 * sp.Symbol("x")**2
+    assert result.dimension == LENGTH**2
+
+
+def test_nested_symbolic_functions_with_different_dimensions():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("t", "t", TIME)
+    engine.lines = [
+        "f(x, t) = x / t",
+        "g(x, t) = f(x, t)**2",
+    ]
+    engine._rebuild()
+
+    result = engine.call(
+        "g",
+        engine.variables.get("x"),
+        engine.variables.get("t"),
+    )
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == (LENGTH / TIME)**2
+
+
+def test_nested_symbolic_function_dimension_mismatch():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("t", "t", TIME)
+    engine.lines = [
+        "f(x) = x**2",
+        "g(x, t) = f(x) + t",
+    ]
+    engine._rebuild()
+
+    with pytest.raises(DimensionError):
+        engine.call(
+            "g",
+            engine.variables.get("x"),
+            engine.variables.get("t"),
+        )
+
+
+======================== tests/test_engine_quantity_calculus.py ========================
+
+import pytest
+import sympy as sp
+
+from core import MathEngine
+from units.quantities import Quantity
+from units.dimensions import LENGTH, MASS
+
+
+def test_ordinary_symbolic_derivative():
+    engine = MathEngine()
+
+    result = engine.differentiate("x**3", "x")
+
+    assert sp.simplify(result - 3 * sp.Symbol("x")**2) == 0
+
+
+def test_quantity_derivative():
+    engine = MathEngine()
+    engine.set_lines([
+        "x = 5 * m",
+    ])
+
+    result = engine.differentiate("x**2", "x")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(10)
+    assert result.dimension == LENGTH
+
+
+def test_quantity_derivative_with_global_coefficient():
+    engine = MathEngine()
+    engine.set_lines([
+        "mass = 2 * kg",
+        "x = 5 * m",
+    ])
+
+    result = engine.differentiate("mass * x**2", "x")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(20)
+    assert result.dimension == MASS * LENGTH
+
+
+def test_quantity_derivative_second_order():
+    engine = MathEngine()
+    engine.set_lines([
+        "x = 5 * m",
+    ])
+
+    result = engine.differentiate("x**3", "x", order=2)
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(30)
+    assert result.dimension == LENGTH
+
+
+def test_quantity_derivative_user_function():
+    engine = MathEngine()
+    engine.set_lines([
+        "x = 5 * m",
+        "f(t) = t**2",
+    ])
+
+    result = engine.differentiate("f(x)", "x")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(10)
+    assert result.dimension == LENGTH
+
+
+def test_derivative_does_not_change_variables():
+    engine = MathEngine()
+    engine.set_lines([
+        "x = 5 * m",
+    ])
+
+    engine.differentiate("x**2", "x")
+
+    result = engine.get_variable("x")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(5)
+    assert result.dimension == LENGTH
+
+
+======================== tests/test_engine_quantity_cumulative.py ========================
+
+import numpy as np
+import pytest
+
+from core import MathEngine
+from core.errors import DimensionError
+from units.quantities import Quantity
+from units.dimensions import LENGTH, TIME
+
+
+def test_quantity_cumulative_integral():
+    engine = MathEngine()
+
+    result = engine.cumulative(
+        "3 * m / s",
+        values=[1, 2, 3],
+        variable="t",
+        start=Quantity(0, TIME),
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.dimension == LENGTH
+    assert np.allclose(result.value, [3, 6, 9])
+
+
+def test_quantity_cumulative_with_global_variable():
+    engine = MathEngine()
+    engine.set_lines(["velocity = 3 * m / s"])
+
+    result = engine.cumulative(
+        "velocity",
+        values=[1, 2, 3],
+        variable="t",
+        start=Quantity(0, TIME),
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.dimension == LENGTH
+    assert np.allclose(result.value, [3, 6, 9])
+
+
+def test_quantity_cumulative_empty_array():
+    engine = MathEngine()
+
+    result = engine.cumulative(
+        "3 * m / s",
+        values=[],
+        variable="t",
+        start=Quantity(0, TIME),
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.dimension == LENGTH
+    assert len(result.value) == 0
+
+
+def test_quantity_cumulative_dimension_mismatch():
+    engine = MathEngine()
+
+    with pytest.raises(DimensionError):
+        engine.cumulative(
+            "3 * m / s",
+            values=[
+                Quantity(1, TIME),
+                Quantity(2, LENGTH),
+            ],
+            variable="t",
+            start=Quantity(0, TIME),
+        )
+
+
+def test_quantity_cumulative_non_monotonic_values():
+    engine = MathEngine()
+
+    with pytest.raises(Exception):
+        engine.cumulative(
+            "3 * m / s",
+            values=[
+                Quantity(1, TIME),
+                Quantity(3, TIME),
+                Quantity(2, TIME),
+            ],
+            variable="t",
+            start=Quantity(0, TIME),
+        )
+
+
+======================== tests/test_engine_quantity_functions.py ========================
+
+import pytest
+
+from core import MathEngine
+from units.quantities import Quantity
+from units.dimensions import LENGTH, TIME, FORCE
+
+
+def make_engine():
+    engine = MathEngine()
+    engine.set_lines([
+        "mass = 2 * kg",
+        "acceleration = 9.81 * m / s**2",
+        "F(m, a) = m * a",
+        "double(x) = 2 * x",
+        "scale(x, factor=3) = x * factor",
+        "G(x) = double(x) + x",
+        "ordinary(x) = x**2 + 1",
+    ])
+    return engine
+
+
+def test_quantity_function_call():
+    engine = make_engine()
+
+    result = engine.call(
+        "F",
+        engine.get_variable("mass"),
+        engine.get_variable("acceleration"),
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(19.62)
+    assert result.dimension == FORCE
+
+
+def test_quantity_function_in_expression():
+    engine = make_engine()
+
+    result = engine.evaluate("F(mass, acceleration)")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(19.62)
+    assert result.dimension == FORCE
+
+
+def test_nested_quantity_functions():
+    engine = make_engine()
+
+    result = engine.evaluate("G(5 * m)")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(15)
+    assert result.dimension == LENGTH
+
+
+def test_quantity_function_default_argument():
+    engine = make_engine()
+
+    result = engine.call(
+        "scale",
+        Quantity(4, LENGTH),
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(12)
+    assert result.dimension == LENGTH
+
+
+def test_quantity_function_keyword_argument():
+    engine = make_engine()
+
+    result = engine.call(
+        "scale",
+        Quantity(4, LENGTH),
+        factor=5,
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(20)
+    assert result.dimension == LENGTH
+
+
+def test_ordinary_function_still_works():
+    engine = make_engine()
+
+    assert engine.call("ordinary", 3) == pytest.approx(10)
+
+
+def test_ordinary_function_in_expression():
+    engine = make_engine()
+
+    assert engine.evaluate("ordinary(3)") == pytest.approx(10)
+
+
+======================== tests/test_engine_quantity_globals.py ========================
+
+import pytest
+
+from core import MathEngine
+from units.quantities import Quantity
+from units.dimensions import MASS, FORCE, LENGTH
+
+
+def test_function_uses_global_quantity_with_numeric_argument():
+    engine = MathEngine()
+    engine.set_lines([
+        "mass = 2 * kg",
+        "F(a) = mass * a",
+    ])
+
+    result = engine.call("F", 3)
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(6)
+    assert result.dimension == MASS
+
+
+def test_function_uses_global_quantity_in_expression():
+    engine = MathEngine()
+    engine.set_lines([
+        "mass = 2 * kg",
+        "F(a) = mass * a",
+    ])
+
+    result = engine.evaluate("F(3)")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(6)
+    assert result.dimension == MASS
+
+
+def test_nested_function_uses_global_quantity():
+    engine = MathEngine()
+    engine.set_lines([
+        "mass = 2 * kg",
+        "F(a) = mass * a",
+        "G(a) = F(a) * 2",
+    ])
+
+    result = engine.call("G", 3)
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(12)
+    assert result.dimension == MASS
+
+
+def test_function_global_quantity_dependency_updates():
+    engine = MathEngine()
+    engine.set_lines([
+        "mass = 2 * kg",
+        "F(a) = mass * a",
+    ])
+
+    first = engine.call("F", 3)
+
+    engine.set_lines([
+        "mass = 5 * kg",
+        "F(a) = mass * a",
+    ])
+
+    second = engine.call("F", 3)
+
+    assert first.value == pytest.approx(6)
+    assert second.value == pytest.approx(15)
+
+
+def test_function_with_global_quantity_and_quantity_argument():
+    engine = MathEngine()
+    engine.set_lines([
+        "mass = 2 * kg",
+        "F(a) = mass * a",
+    ])
+
+    result = engine.call("F", Quantity(3, LENGTH))
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(6)
+    assert result.dimension == MASS * LENGTH
+
+
+def test_ordinary_function_without_quantity_still_works():
+    engine = MathEngine()
+    engine.set_lines([
+        "a = 10",
+        "f(x) = x**2 + a",
+    ])
+
+    assert engine.call("f", 3) == pytest.approx(19)
+
+
+======================== tests/test_engine_quantity_integration.py ========================
+
+import pytest
+
+from core import MathEngine
+from core.errors import DimensionError
+from units.quantities import Quantity
+from units.dimensions import LENGTH, TIME
+
+
+def test_quantity_definite_integral():
+    engine = MathEngine()
+
+    result = engine.integrate(
+        "3 * m / s",
+        variable="t",
+        lower=Quantity(0, TIME),
+        upper=Quantity(2, TIME),
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(6)
+    assert result.dimension == LENGTH
+
+
+def test_quantity_integral_with_global_variable():
+    engine = MathEngine()
+    engine.set_lines(["velocity = 3 * m / s"])
+
+    result = engine.integrate(
+        "velocity",
+        variable="t",
+        lower=Quantity(0, TIME),
+        upper=Quantity(2, TIME),
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(6)
+    assert result.dimension == LENGTH
+
+
+def test_quantity_integral_reverse_bounds():
+    engine = MathEngine()
+
+    result = engine.integrate(
+        "3 * m / s",
+        variable="t",
+        lower=Quantity(2, TIME),
+        upper=Quantity(0, TIME),
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(-6)
+    assert result.dimension == LENGTH
+
+
+def test_quantity_integral_dimension_mismatch():
+    engine = MathEngine()
+
+    with pytest.raises(DimensionError):
+        engine.integrate(
+            "3 * m / s",
+            variable="t",
+            lower=Quantity(0, TIME),
+            upper=Quantity(2, LENGTH),
+        )
+
+
+======================== tests/test_engine_symbolic_calculus.py ========================
+import sympy as sp
+
+from core import MathEngine
+from units.dimensions import LENGTH, TIME
+from units.quantities import SymbolicQuantity
+
+
+def test_differentiate_symbolic_quantity():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+
+    result = engine.differentiate("x**2", "x")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == 2 * sp.Symbol("x")
+    assert result.dimension == LENGTH
+
+
+def test_integrate_symbolic_quantity():
+    engine = MathEngine()
+    engine.set_symbolic_variable("t", "t", TIME)
+
+    result = engine.integrate("3*t", variable="t")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == sp.Rational(3, 2) * sp.Symbol("t")**2
+    assert result.dimension == TIME**2
+
+
+def test_definite_integrate_symbolic_quantity():
+    engine = MathEngine()
+    engine.set_symbolic_variable("t", "t", TIME)
+
+    result = engine.integrate("t", variable="t", lower=0, upper=2)
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == 2
+    assert result.dimension == TIME**2
+
+
+======================== tests/test_engine_symbolic_function_calculus.py ========================
+import sympy as sp
+
+from core import MathEngine
+from units.dimensions import LENGTH, TIME
+from units.quantities import SymbolicQuantity
+
+
+def test_differentiate_symbolic_user_function():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x) = x**2",
+    ]
+    engine._rebuild()
+
+    result = engine.differentiate("f(x)", "x")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH
+    assert sp.simplify(result.expression - 2 * sp.Symbol("x")) == 0
+
+
+def test_integrate_symbolic_user_function():
+    engine = MathEngine()
+    engine.set_symbolic_variable("t", "t", TIME)
+    engine.lines = [
+        "f(t) = 3*t",
+    ]
+    engine._rebuild()
+
+    result = engine.integrate("f(t)", variable="t")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == TIME**2
+    assert sp.simplify(result.expression - sp.Rational(3, 2) * sp.Symbol("t")**2) == 0
+
+
+def test_differentiate_nested_symbolic_function():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x) = x**2",
+        "g(x) = f(x)**2",
+    ]
+    engine._rebuild()
+
+    result = engine.differentiate("g(x)", "x")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH**3
+    assert sp.simplify(result.expression - 4 * sp.Symbol("x")**3) == 0
+
+
+def test_integrate_symbolic_function_with_global_variable():
+    engine = MathEngine()
+    engine.set_symbolic_variable("t", "t", TIME)
+    engine.set_symbolic_variable("a", "a", LENGTH)
+    engine.lines = [
+        "f(t) = a*t",
+    ]
+    engine._rebuild()
+
+    result = engine.integrate("f(t)", variable="t")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH * TIME**2
+    assert sp.simplify(
+        result.expression - sp.Symbol("a") * sp.Symbol("t")**2 / 2
+    ) == 0
+
+
+======================== tests/test_engine_symbolic_function_calculus_defaults.py ========================
+import sympy as sp
+
+from core import MathEngine
+from units.dimensions import LENGTH, TIME
+from units.quantities import SymbolicQuantity
+
+
+def test_differentiate_function_with_default_argument():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x, k=2) = k*x**2",
+    ]
+    engine._rebuild()
+
+    result = engine.differentiate("f(x)", "x")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH
+    assert sp.simplify(
+        result.expression - 4 * sp.Symbol("x")
+    ) == 0
+
+
+def test_differentiate_function_with_overridden_argument():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x, k=2) = k*x**2",
+    ]
+    engine._rebuild()
+
+    result = engine.differentiate("f(x, 3)", "x")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH
+    assert sp.simplify(
+        result.expression - 6 * sp.Symbol("x")
+    ) == 0
+
+
+def test_integrate_function_with_default_argument():
+    engine = MathEngine()
+    engine.set_symbolic_variable("t", "t", TIME)
+    engine.lines = [
+        "f(t, k=2) = k*t",
+    ]
+    engine._rebuild()
+
+    result = engine.integrate("f(t)", variable="t")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == TIME**2
+    assert sp.simplify(
+        result.expression - sp.Symbol("t")**2
+    ) == 0
+
+
+def test_integrate_function_with_overridden_argument():
+    engine = MathEngine()
+    engine.set_symbolic_variable("t", "t", TIME)
+    engine.lines = [
+        "f(t, k=2) = k*t",
+    ]
+    engine._rebuild()
+
+    result = engine.integrate("f(t, 3)", variable="t")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == TIME**2
+    assert sp.simplify(
+        result.expression - sp.Rational(3, 2) * sp.Symbol("t")**2
+    ) == 0
+
+
+======================== tests/test_engine_symbolic_function_chains.py ========================
+import sympy as sp
+import pytest
+
+from core import MathEngine
+from core.errors import DimensionError
+from units.dimensions import LENGTH, TIME
+from units.quantities import SymbolicQuantity
+
+
+def test_three_level_function_chain():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x) = x**2",
+        "g(x) = f(x) + x**2",
+        "h(x) = g(x) * x",
+    ]
+    engine._rebuild()
+
+    result = engine.call("h", engine.variables.get("x"))
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH**3
+    assert sp.simplify(result.expression - 2 * sp.Symbol("x")**3) == 0
+
+
+def test_deep_chain_with_default_arguments():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x, k=2) = k*x",
+        "g(x, a=3) = f(x, a)",
+        "h(x) = g(x) + f(x)",
+    ]
+    engine._rebuild()
+
+    result = engine.call("h", engine.variables.get("x"))
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH
+    assert sp.simplify(result.expression - 5 * sp.Symbol("x")) == 0
+
+
+def test_deep_chain_with_overridden_arguments():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x, k=2) = k*x",
+        "g(x, a=3) = f(x, a)",
+        "h(x, b=4) = g(x, b) + f(x, b)",
+    ]
+    engine._rebuild()
+
+    result = engine.call("h", engine.variables.get("x"), 5)
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH
+    assert sp.simplify(result.expression - 10 * sp.Symbol("x")) == 0
+
+
+def test_global_variables_at_different_levels():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("a", "a", LENGTH)
+    engine.set_symbolic_variable("b", "b", LENGTH)
+    engine.lines = [
+        "f(x) = x + a",
+        "g(x) = f(x) + b",
+        "h(x) = g(x) * x",
+    ]
+    engine._rebuild()
+
+    result = engine.call("h", engine.variables.get("x"))
+
+    x, a, b = sp.symbols("x a b")
+    expected = (x + a + b) * x
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH**2
+    assert sp.simplify(result.expression - expected) == 0
+
+
+def test_global_variable_dimension_error_in_deep_chain():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("t", "t", TIME)
+    engine.lines = [
+        "f(x) = x + t",
+        "g(x) = f(x)**2",
+        "h(x) = g(x) + x**2",
+    ]
+    engine._rebuild()
+
+    with pytest.raises(DimensionError):
+        engine.call("h", engine.variables.get("x"))
+
+
+def test_deep_chain_differentiation():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x) = x**2",
+        "g(x) = f(x)**2",
+        "h(x) = g(x) * x",
+    ]
+    engine._rebuild()
+
+    result = engine.differentiate("h(x)", "x")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH**4
+    assert sp.simplify(
+        result.expression - 5 * sp.Symbol("x")**4
+    ) == 0
+
+
+def test_deep_chain_integration():
+    engine = MathEngine()
+    engine.set_symbolic_variable("t", "t", TIME)
+    engine.lines = [
+        "f(t) = t**2",
+        "g(t) = f(t) * t",
+        "h(t) = g(t) + t**3",
+    ]
+    engine._rebuild()
+
+    result = engine.integrate("h(t)", variable="t")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == TIME**4
+    assert sp.simplify(
+        result.expression - sp.Rational(1, 2) * sp.Symbol("t")**4
+    ) == 0
+
+
+def test_nested_chain_with_mixed_dimensions():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("t", "t", TIME)
+    engine.lines = [
+        "velocity(x, t) = x / t",
+        "square(x, t) = velocity(x, t)**2",
+        "result(x, t) = square(x, t) * t",
+    ]
+    engine._rebuild()
+
+    value = engine.call(
+        "result",
+        engine.variables.get("x"),
+        engine.variables.get("t"),
+    )
+
+    assert isinstance(value, SymbolicQuantity)
+    assert value.dimension == LENGTH**2 / TIME
+
+
+======================== tests/test_engine_symbolic_function_globals_defaults.py ========================
+import sympy as sp
+import pytest
+
+from core import MathEngine
+from core.errors import DimensionError
+from units.dimensions import LENGTH, TIME
+from units.quantities import SymbolicQuantity
+
+
+def test_symbolic_function_uses_global_symbolic_variable():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("a", "a", LENGTH)
+    engine.lines = [
+        "f(x) = x + a",
+        "g(x) = f(x)**2",
+    ]
+    engine._rebuild()
+
+    result = engine.call("g", engine.variables.get("x"))
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH**2
+    assert result.expression == (sp.Symbol("x") + sp.Symbol("a"))**2
+
+
+def test_symbolic_function_default_argument():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x) = x**2",
+        "g(x, k=2) = k*f(x) + x**2",
+    ]
+    engine._rebuild()
+
+    result = engine.call("g", engine.variables.get("x"))
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH**2
+    assert sp.simplify(result.expression - 3 * sp.Symbol("x")**2) == 0
+
+
+def test_symbolic_function_default_argument_can_be_overridden():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x) = x**2",
+        "g(x, k=2) = k*f(x) + x**2",
+    ]
+    engine._rebuild()
+
+    result = engine.call("g", engine.variables.get("x"), 4)
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH**2
+    assert result.expression == 5 * sp.Symbol("x")**2
+
+
+def test_symbolic_function_rejects_incompatible_global_variable():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("a", "a", TIME)
+    engine.lines = [
+        "f(x) = x + a",
+    ]
+    engine._rebuild()
+
+    with pytest.raises(DimensionError):
+        engine.call("f", engine.variables.get("x"))
+
+
+======================== tests/test_engine_symbolic_functions.py ========================
+import sympy as sp
+import pytest
+
+from core import MathEngine
+from core.errors import DimensionError
+from units.dimensions import LENGTH, TIME
+from units.quantities import SymbolicQuantity
+
+
+def test_symbolic_function_preserves_dimensions():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x) = x**2",
+    ]
+    engine._rebuild()
+
+    result = engine.call("f", engine.variables.get("x"))
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH**2
+    assert result.expression == sp.Symbol("x")**2
+
+
+def test_symbolic_function_with_two_arguments():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("t", "t", TIME)
+    engine.lines = [
+        "f(x, t) = x / t",
+    ]
+    engine._rebuild()
+
+    result = engine.call(
+        "f",
+        engine.variables.get("x"),
+        engine.variables.get("t"),
+    )
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH / TIME
+
+
+def test_symbolic_function_rejects_incompatible_addition():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("t", "t", TIME)
+    engine.lines = [
+        "f(x, t) = x + t",
+    ]
+    engine._rebuild()
+
+    with pytest.raises(DimensionError):
+        engine.call(
+            "f",
+            engine.variables.get("x"),
+            engine.variables.get("t"),
+        )
+
+
+======================== tests/test_engine_symbolic_quantity.py ========================
+import sympy as sp
+import pytest
+
+from core import MathEngine
+from core.errors import DimensionError
+from units.dimensions import LENGTH, TIME
+from units.quantities import SymbolicQuantity
+
+
+def test_evaluate_symbolic_quantity():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+
+    result = engine.evaluate("2*x")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == 2 * sp.Symbol("x")
+    assert result.dimension == LENGTH
+
+
+def test_evaluate_sum_of_symbolic_quantities():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("y", "y", LENGTH)
+
+    result = engine.evaluate("x + y")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == sp.Symbol("x") + sp.Symbol("y")
+    assert result.dimension == LENGTH
+
+
+def test_evaluate_dimension_mismatch():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("t", "t", TIME)
+
+    with pytest.raises(DimensionError):
+        engine.evaluate("x + t")
+
+
+======================== tests/test_engine_units.py ========================
+
+import pytest
+
+from core import MathEngine
+from core.errors import DimensionError
+from units.quantities import Quantity
+from units.dimensions import LENGTH, MASS, FORCE, TIME
+
+
+def test_quantity_variable():
+    engine = MathEngine()
+    engine.set_lines([
+        "mass = 2 * kg",
+    ])
+
+    result = engine.get_variable("mass")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(2)
+    assert result.dimension == MASS
+
+
+def test_quantity_dependencies():
+    engine = MathEngine()
+    engine.set_lines([
+        "mass = 2 * kg",
+        "acceleration = 9.81 * m / s**2",
+        "force = mass * acceleration",
+    ])
+
+    result = engine.get_variable("force")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(19.62)
+    assert result.dimension == FORCE
+
+
+def test_quantity_forward_dependency():
+    engine = MathEngine()
+    engine.set_lines([
+        "force = mass * acceleration",
+        "acceleration = 9.81 * m / s**2",
+        "mass = 2 * kg",
+    ])
+
+    assert engine.get_variable("force").value == pytest.approx(19.62)
+
+
+def test_quantity_expression_evaluate():
+    engine = MathEngine()
+    engine.set_lines([
+        "mass = 2 * kg",
+        "acceleration = 9.81 * m / s**2",
+    ])
+
+    result = engine.evaluate("mass * acceleration")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(19.62)
+    assert result.dimension == FORCE
+
+
+def test_quantity_dimension_mismatch():
+    engine = MathEngine()
+
+    with pytest.raises(DimensionError):
+        engine.set_lines([
+            "mass = 2 * kg",
+            "length = 3 * m",
+            "invalid = mass + length",
+        ])
+
+
+def test_quantity_conversion_base_units():
+    engine = MathEngine()
+    engine.set_lines([
+        "length = 100 * cm",
+    ])
+
+    result = engine.get_variable("length")
+
+    assert result.value == pytest.approx(1)
+    assert result.dimension == LENGTH
+
+
+def test_ordinary_variables_still_work():
+    engine = MathEngine()
+    engine.set_lines([
+        "a = 2",
+        "b = a * 3",
+    ])
+
+    assert engine.get_variable("a") == 2
+    assert engine.get_variable("b") == 6
+
+
+def test_quantity_evaluate_arithmetic():
+    engine = MathEngine()
+    engine.set_lines([
+        "length = 5 * m",
+    ])
+
+    result = engine.evaluate("length / (2 * s)")
+
+    assert result.dimension == LENGTH / TIME
+    assert result.value == pytest.approx(2.5)
+
+
+======================== tests/test_quantity_expression.py ========================
+
+import pytest
+
+from units.expression import QuantityExpressionEvaluator
+from units.quantities import Quantity
+from units.dimensions import LENGTH, MASS, TIME, FORCE
+
+from core.errors import DimensionError
+
+
+def test_simple_quantity():
+    evaluator = QuantityExpressionEvaluator()
+
+    result = evaluator.evaluate("2 * kg")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(2)
+    assert result.dimension == MASS
+
+
+def test_unit_conversion_to_si():
+    evaluator = QuantityExpressionEvaluator()
+
+    result = evaluator.evaluate("100 * cm")
+
+    assert result.value == pytest.approx(1)
+    assert result.dimension == LENGTH
+
+
+def test_compound_unit():
+    evaluator = QuantityExpressionEvaluator()
+
+    result = evaluator.evaluate("9.81 * m / s**2")
+
+    assert result.dimension == LENGTH / (TIME ** 2)
+    assert result.value == pytest.approx(9.81)
+
+
+def test_force_calculation():
+    evaluator = QuantityExpressionEvaluator({
+        "mass": evaluator_quantity(2, MASS),
+        "acceleration": evaluator_quantity(9.81, LENGTH / (TIME ** 2)),
+    })
+
+    result = evaluator.evaluate("mass * acceleration")
+
+    assert result.dimension == FORCE
+    assert result.value == pytest.approx(19.62)
+
+
+def test_dimension_mismatch():
+    evaluator = QuantityExpressionEvaluator()
+
+    with pytest.raises(DimensionError):
+        evaluator.evaluate("2 * kg + 3 * m")
+
+
+def test_power():
+    evaluator = QuantityExpressionEvaluator()
+
+    result = evaluator.evaluate("(3 * m)**2")
+
+    assert result.value == pytest.approx(9)
+    assert result.dimension == LENGTH ** 2
+
+
+def test_trigonometry():
+    evaluator = QuantityExpressionEvaluator()
+
+    result = evaluator.evaluate("sin(pi / 2)")
+
+    assert result == pytest.approx(1)
+
+
+def test_dimensionless_quantity_function():
+    evaluator = QuantityExpressionEvaluator()
+
+    result = evaluator.evaluate("sqrt(4 * m / m)")
+
+    assert result == pytest.approx(2)
+
+
+def evaluator_quantity(value, dimension):
+    return Quantity(value, dimension)
+
+
+======================== tests/test_symbolic_quantity.py ========================
+import sympy as sp
+import pytest
+
+from core.errors import DimensionError
+from units.dimensions import (
+    DIMENSIONLESS,
+    LENGTH,
+    MASS,
+    TIME,
+)
+from units.quantities import SymbolicQuantity
+
+
+x = sp.Symbol("x")
+y = sp.Symbol("y")
+
+
+def test_creation():
+    quantity = SymbolicQuantity(3 * x, LENGTH)
+
+    assert quantity.expression == 3 * x
+    assert quantity.dimension == LENGTH
+
+
+def test_creation_from_number():
+    quantity = SymbolicQuantity(5, MASS)
+
+    assert quantity.expression == sp.Integer(5)
+    assert quantity.dimension == MASS
+
+
+def test_addition():
+    a = SymbolicQuantity(2 * x, LENGTH)
+    b = SymbolicQuantity(3 * x, LENGTH)
+
+    result = a + b
+
+    assert result.expression == 5 * x
+    assert result.dimension == LENGTH
+
+
+def test_addition_dimension_mismatch():
+    a = SymbolicQuantity(x, LENGTH)
+    b = SymbolicQuantity(x, TIME)
+
+    with pytest.raises(DimensionError):
+        a + b
+
+
+def test_subtraction():
+    a = SymbolicQuantity(5 * x, LENGTH)
+    b = SymbolicQuantity(2 * x, LENGTH)
+
+    result = a - b
+
+    assert result.expression == 3 * x
+    assert result.dimension == LENGTH
+
+
+def test_multiplication():
+    a = SymbolicQuantity(2 * x, LENGTH)
+    b = SymbolicQuantity(3 * y, TIME)
+
+    result = a * b
+
+    assert result.expression == 6 * x * y
+    assert result.dimension == LENGTH * TIME
+
+
+def test_division():
+    a = SymbolicQuantity(6 * x, LENGTH)
+    b = SymbolicQuantity(2 * y, TIME)
+
+    result = a / b
+
+    assert result.expression == 3 * x / y
+    assert result.dimension == LENGTH / TIME
+
+
+def test_scalar_multiplication():
+    quantity = SymbolicQuantity(x, LENGTH)
+
+    result = quantity * 3
+
+    assert result.expression == 3 * x
+    assert result.dimension == LENGTH
+
+
+def test_scalar_division():
+    quantity = SymbolicQuantity(6 * x, LENGTH)
+
+    result = quantity / 2
+
+    assert result.expression == 3 * x
+    assert result.dimension == LENGTH
+
+
+def test_power():
+    quantity = SymbolicQuantity(x, LENGTH)
+
+    result = quantity ** 2
+
+    assert result.expression == x**2
+    assert result.dimension == LENGTH**2
+
+
+def test_fractional_power():
+    quantity = SymbolicQuantity(x, LENGTH)
+
+    result = quantity ** sp.Rational(1, 2)
+
+    assert result.expression == sp.sqrt(x)
+    assert result.dimension == LENGTH ** sp.Rational(1, 2)
+
+
+def test_dimensionless_power():
+    quantity = SymbolicQuantity(x, DIMENSIONLESS)
+
+    result = quantity ** y
+
+    assert result.expression == x**y
+    assert result.dimension == DIMENSIONLESS
+
+
+def test_negation():
+    quantity = SymbolicQuantity(x, LENGTH)
+
+    result = -quantity
+
+    assert result.expression == -x
+    assert result.dimension == LENGTH
+
+
+def test_differentiation():
+    quantity = SymbolicQuantity(3 * x**2, LENGTH)
+
+    result = quantity.diff(x)
+
+    assert result.expression == 6 * x
+    assert result.dimension == LENGTH
+
+
+def test_substitution():
+    quantity = SymbolicQuantity(3 * x**2, LENGTH)
+
+    result = quantity.subs(x, 2)
+
+    assert result.expression == 12
+    assert result.dimension == LENGTH
+
+
+def test_simplify():
+    quantity = SymbolicQuantity(x + x, LENGTH)
+
+    result = quantity.simplify()
+
+    assert result.expression == 2 * x
+    assert result.dimension == LENGTH
+
+
+def test_equality():
+    a = SymbolicQuantity(2 * x, LENGTH)
+    b = SymbolicQuantity(x + x, LENGTH)
+
+    assert a == b
+
+
+def test_inequality_by_dimension():
+    a = SymbolicQuantity(x, LENGTH)
+    b = SymbolicQuantity(x, TIME)
+
+    assert a != b
+
+
+======================== tests/test_symbolic_quantity_dimensions.py ========================
+
+import sympy as sp
+import pytest
+
+from core.errors import DimensionError
+from units.dimensions import (
+    DIMENSIONLESS,
+    LENGTH,
+    MASS,
+    TIME,
+)
+from units.quantities import SymbolicQuantity
+
+
+x, y, t = sp.symbols("x y t")
+
+
+def test_symbol_dimensions():
+    quantity = SymbolicQuantity(
+        x + y,
+        symbol_dimensions={
+            x: LENGTH,
+            y: LENGTH,
+        },
+    )
+
+    assert quantity.dimension == LENGTH
+
+
+def test_symbol_dimension_mismatch():
+    with pytest.raises(DimensionError):
+        SymbolicQuantity(
+            x + t,
+            symbol_dimensions={
+                x: LENGTH,
+                t: TIME,
+            },
+        )
+
+
+def test_symbol_multiplication_dimensions():
+    quantity = SymbolicQuantity(
+        x * t,
+        symbol_dimensions={
+            x: LENGTH,
+            t: TIME,
+        },
+    )
+
+    assert quantity.dimension == LENGTH * TIME
+
+
+def test_symbol_division_dimensions():
+    quantity = SymbolicQuantity(
+        x / t,
+        symbol_dimensions={
+            x: LENGTH,
+            t: TIME,
+        },
+    )
+
+    assert quantity.dimension == LENGTH / TIME
+
+
+def test_symbol_power_dimensions():
+    quantity = SymbolicQuantity(
+        x**2,
+        symbol_dimensions={
+            x: LENGTH,
+        },
+    )
+
+    assert quantity.dimension == LENGTH**2
+
+
+def test_dimensionless_symbol():
+    quantity = SymbolicQuantity(
+        sp.sin(x),
+        symbol_dimensions={
+            x: DIMENSIONLESS,
+        },
+    )
+
+    assert quantity.dimension == DIMENSIONLESS
+
+
+def test_unknown_symbol_requires_dimension():
+    with pytest.raises(DimensionError):
+        SymbolicQuantity(
+            x + y,
+            symbol_dimensions={
+                x: LENGTH,
+            },
+        )
+
+
+def test_differentiate_symbolic_quantity():
+    quantity = SymbolicQuantity(
+        x**2,
+        symbol_dimensions={
+            x: LENGTH,
+        },
+    )
+
+    result = quantity.diff(x)
+
+    assert result.expression == 2 * x
+    assert result.dimension == LENGTH
+
+
+def test_differentiation_dimension():
+    quantity = SymbolicQuantity(
+        x**2,
+        LENGTH**2,
+        symbol_dimensions={
+            x: LENGTH,
+        },
+    )
+
+    result = quantity.diff(x)
+
+    assert result.dimension == LENGTH
+
+
+def test_integrate_symbolic_quantity():
+    quantity = SymbolicQuantity(
+        3 * t,
+        LENGTH / TIME,
+        symbol_dimensions={
+            t: TIME,
+        },
+    )
+
+    result = quantity.integrate(t)
+
+    assert result.expression == sp.Rational(3, 2) * t**2
+    assert result.dimension == LENGTH
+
+
+======================== tests/test_symbolic_quantity_integration.py ========================
+import sympy as sp
+import pytest
+
+from core.errors import DimensionError
+from units.dimensions import (
+    LENGTH,
+    TIME,
+    MASS,
+)
+from units.quantities import SymbolicQuantity
+
+
+t = sp.Symbol("t")
+
+
+def test_indefinite_integration():
+    quantity = SymbolicQuantity(3 * t, LENGTH)
+
+    result = quantity.integrate(t, variable_dimension=TIME)
+
+    assert result.expression == sp.Rational(3, 2) * t**2
+    assert result.dimension == LENGTH * TIME
+
+
+def test_integration_of_constant():
+    quantity = SymbolicQuantity(5, LENGTH)
+
+    result = quantity.integrate(t, variable_dimension=TIME)
+
+    assert result.expression == 5 * t
+    assert result.dimension == LENGTH * TIME
+
+
+def test_definite_integration():
+    quantity = SymbolicQuantity(3 * t, LENGTH)
+
+    result = quantity.integrate(
+        t,
+        lower=0,
+        upper=2,
+        variable_dimension=TIME,
+    )
+
+    assert result.expression == 6
+    assert result.dimension == LENGTH * TIME
+
+
+def test_integration_without_variable_dimension():
+    quantity = SymbolicQuantity(3 * t, LENGTH)
+
+    with pytest.raises(ValueError):
+        quantity.integrate(t)
+
+
+def test_integration_dimension_mismatch():
+    quantity = SymbolicQuantity(3 * t, LENGTH)
+
+    with pytest.raises(DimensionError):
+        quantity.integrate(
+            t,
+            lower=SymbolicQuantity(0, TIME),
+            upper=SymbolicQuantity(2, MASS),
+            variable_dimension=TIME,
+        )
+
+
+def test_integrate_then_differentiate():
+    quantity = SymbolicQuantity(3 * t**2, MASS)
+
+    integral = quantity.integrate(t, variable_dimension=TIME)
+    derivative = integral.diff(t)
+
+    assert sp.simplify(
+        derivative.expression - quantity.expression
+    ) == 0
+
+    assert derivative.dimension == integral.dimension
+
+
+======================== tests/test_units.py ========================
+
+
+
+======================== units/__init__.py ========================
+
+
+
+======================== units/constants.py ========================
+
+from math import pi
+from types import MappingProxyType
+
+from .dimensions import (
+    DIMENSIONLESS,
+    LENGTH,
+    MASS,
+    TIME,
+    TEMPERATURE,
+    CURRENT,
+    AMOUNT,
+    ENERGY,
+    CHARGE,
+    FORCE,
+)
+
+from .quantities import Quantity
+
+
+# ---------------------------------------------------------------------
+# Derived dimensions
+# ---------------------------------------------------------------------
+
+ACTION = ENERGY * TIME
+GRAVITATIONAL_CONSTANT_DIM = LENGTH ** 3 / (MASS * TIME ** 2)
+
+PERMITTIVITY = CHARGE ** 2 / (FORCE * LENGTH ** 2)
+PERMEABILITY = FORCE / (CURRENT ** 2)
+
+BOLTZMANN_CONSTANT_DIM = ENERGY / TEMPERATURE
+
+
+# ---------------------------------------------------------------------
+# Fundamental constants (SI)
+# ---------------------------------------------------------------------
+
+# Speed of light in vacuum, m/s
+C = Quantity(
+    299792458,
+    LENGTH / TIME,
+)
+
+# Elementary charge, C
+E_CHARGE = Quantity(
+    1.602176634e-19,
+    CHARGE,
+)
+
+# Planck constant, J*s
+H = Quantity(
+    6.62607015e-34,
+    ACTION,
+)
+
+# Reduced Planck constant, J*s
+HBAR = Quantity(
+    6.62607015e-34 / (2 * pi),
+    ACTION,
+)
+
+# Boltzmann constant, J/K
+K_B = Quantity(
+    1.380649e-23,
+    BOLTZMANN_CONSTANT_DIM,
+)
+
+# Avogadro constant, 1/mol
+N_A = Quantity(
+    6.02214076e23,
+    DIMENSIONLESS / AMOUNT,
+)
+
+# Newtonian gravitational constant, m^3/(kg*s^2)
+G = Quantity(
+    6.67430e-11,
+    GRAVITATIONAL_CONSTANT_DIM,
+)
+
+# Vacuum electric permittivity, F/m
+EPSILON_0 = Quantity(
+    8.8541878188e-12,
+    PERMITTIVITY,
+)
+
+# Vacuum magnetic permeability, H/m
+MU_0 = Quantity(
+    1.25663706127e-6,
+    PERMEABILITY,
+)
+
+
+# ---------------------------------------------------------------------
+# Particle masses (kg)
+# ---------------------------------------------------------------------
+
+M_ELECTRON = Quantity(
+    9.1093837139e-31,
+    MASS,
+)
+
+M_PROTON = Quantity(
+    1.67262192595e-27,
+    MASS,
+)
+
+M_NEUTRON = Quantity(
+    1.67492750056e-27,
+    MASS,
+)
+
+
+# ---------------------------------------------------------------------
+# Convenient aliases
+# ---------------------------------------------------------------------
+
+c = C
+e = E_CHARGE
+h = H
+hbar = HBAR
+k_B = K_B
+N_A_value = N_A
+epsilon_0 = EPSILON_0
+mu_0 = MU_0
+
+
+# ---------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------
+
+CONSTANTS = MappingProxyType({
+    "c": C,
+    "e": E_CHARGE,
+    "h": H,
+    "hbar": HBAR,
+    "k_B": K_B,
+    "N_A": N_A,
+    "G": G,
+    "epsilon_0": EPSILON_0,
+    "mu_0": MU_0,
+    "m_e": M_ELECTRON,
+    "m_p": M_PROTON,
+    "m_n": M_NEUTRON,
+})
+
+
+def get_constant(name: str) -> Quantity:
+    """Return a physical constant by its symbolic name."""
+    try:
+        return CONSTANTS[name]
+    except KeyError:
+        raise KeyError(
+            f"Unknown physical constant: {name}"
+        ) from None
+
+
+======================== units/conversion.py ========================
+
+from numbers import Number
+
+import numpy as np
+
+from core.errors import DimensionError
+from .quantities import Quantity
+from .systems import Unit
+
+
+def _validate_units(source: Unit, target: Unit):
+    if not isinstance(source, Unit) or not isinstance(target, Unit):
+        raise TypeError("source и target должны быть объектами Unit")
+
+    if source.dimension != target.dimension:
+        raise DimensionError(
+            f"Нельзя перевести {source.symbol} "
+            f"({source.dimension}) в {target.symbol} "
+            f"({target.dimension})"
+        )
+
+
+def convert_value(value, source: Unit, target: Unit):
+    """
+    Convert a numerical value from one unit to another.
+
+    Example:
+        convert_value(100, cm, m) == 1
+    """
+    _validate_units(source, target)
+
+    if not isinstance(value, (Number, np.ndarray, list, tuple)):
+        raise TypeError("Значение должно быть числом или массивом")
+
+    return np.asarray(value) * (
+        source.scale_to_si / target.scale_to_si
+    ) if isinstance(value, (np.ndarray, list, tuple)) else (
+        value * source.scale_to_si / target.scale_to_si
+    )
+
+
+def convert_quantity(
+    quantity: Quantity,
+    source: Unit,
+    target: Unit,
+) -> Quantity:
+    """
+    Convert a Quantity from source unit to target unit.
+
+    quantity.value is interpreted in source units.
+    The returned Quantity.value is expressed in target units.
+    """
+    if not isinstance(quantity, Quantity):
+        raise TypeError("quantity должен быть объектом Quantity")
+
+    _validate_units(source, target)
+
+    if quantity.dimension != source.dimension:
+        raise DimensionError(
+            f"Размерность величины {quantity.dimension} "
+            f"не соответствует единице {source.symbol} "
+            f"({source.dimension})"
+        )
+
+    converted_value = convert_value(
+        quantity.value,
+        source,
+        target,
+    )
+
+    return Quantity(
+        value=converted_value,
+        dimension=target.dimension,
+    )
+
+
+======================== units/dimensions.py ========================
+
+from dataclasses import dataclass
+from fractions import Fraction
+from collections.abc import Mapping
+
+
+BASE_DIMENSIONS = (
+    "L",  # Length
+    "M",  # Mass
+    "T",  # Time
+    "I",  # Electric current
+    "Θ",  # Thermodynamic temperature
+    "N",  # Amount of substance
+    "J",  # Luminous intensity
+)
+
+DIMENSION_COUNT = len(BASE_DIMENSIONS)
+
+
+@dataclass(frozen=True)
+class Dimension:
+    """
+    Physical dimension represented by seven rational exponents.
+
+    Exponent order:
+        L, M, T, I, Θ, N, J
+    """
+
+    exponents: tuple[Fraction, ...] = (
+        Fraction(0),
+        Fraction(0),
+        Fraction(0),
+        Fraction(0),
+        Fraction(0),
+        Fraction(0),
+        Fraction(0),
+    )
+
+    def __post_init__(self):
+        if len(self.exponents) != DIMENSION_COUNT:
+            raise ValueError(
+                f"Expected {DIMENSION_COUNT} exponents"
+            )
+
+        normalized = tuple(
+            Fraction(value)
+            for value in self.exponents
+        )
+
+        object.__setattr__(self, "exponents", normalized)
+
+    @classmethod
+    def base(cls, name: str):
+        """Create one of the seven base dimensions."""
+        try:
+            index = BASE_DIMENSIONS.index(name)
+        except ValueError:
+            raise ValueError(
+                f"Unknown base dimension: {name}"
+            ) from None
+
+        values = [Fraction(0)] * DIMENSION_COUNT
+        values[index] = Fraction(1)
+
+        return cls(tuple(values))
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, int | float | Fraction]):
+        """Create a dimension from a mapping such as {'L': 1, 'T': -2}."""
+        exponents = [Fraction(0)] * DIMENSION_COUNT
+
+        for name, power in values.items():
+            try:
+                index = BASE_DIMENSIONS.index(name)
+            except ValueError:
+                raise ValueError(
+                    f"Unknown base dimension: {name}"
+                ) from None
+
+            exponents[index] = Fraction(power)
+
+        return cls(tuple(exponents))
+
+    @property
+    def is_dimensionless(self) -> bool:
+        return all(power == 0 for power in self.exponents)
+
+    def __mul__(self, other):
+        if not isinstance(other, Dimension):
+            return NotImplemented
+
+        return Dimension(tuple(
+            a + b
+            for a, b in zip(self.exponents, other.exponents)
+        ))
+
+    def __truediv__(self, other):
+        if not isinstance(other, Dimension):
+            return NotImplemented
+
+        return Dimension(tuple(
+            a - b
+            for a, b in zip(self.exponents, other.exponents)
+        ))
+
+    def __pow__(self, power):
+        power = Fraction(power)
+
+        return Dimension(tuple(
+            exponent * power
+            for exponent in self.exponents
+        ))
+
+    def __str__(self):
+        if self.is_dimensionless:
+            return "1"
+
+        parts = []
+
+        for name, power in zip(BASE_DIMENSIONS, self.exponents):
+            if power == 0:
+                continue
+
+            if power == 1:
+                parts.append(name)
+            else:
+                parts.append(f"{name}^{power}")
+
+        return " ".join(parts)
+
+    def __repr__(self):
+        return f"Dimension('{self}')"
+
+
+# Base dimensions
+
+DIMENSIONLESS = Dimension()
+
+LENGTH = Dimension.base("L")
+MASS = Dimension.base("M")
+TIME = Dimension.base("T")
+CURRENT = Dimension.base("I")
+TEMPERATURE = Dimension.base("Θ")
+AMOUNT = Dimension.base("N")
+LUMINOUS_INTENSITY = Dimension.base("J")
+
+
+# Derived dimensions
+
+AREA = LENGTH ** 2
+VOLUME = LENGTH ** 3
+
+VELOCITY = LENGTH / TIME
+ACCELERATION = LENGTH / TIME ** 2
+
+FREQUENCY = DIMENSIONLESS / TIME
+
+FORCE = MASS * ACCELERATION
+ENERGY = FORCE * LENGTH
+POWER = ENERGY / TIME
+
+PRESSURE = FORCE / AREA
+DENSITY = MASS / VOLUME
+
+CHARGE = CURRENT * TIME
+VOLTAGE = ENERGY / CHARGE
+RESISTANCE = VOLTAGE / CURRENT
+CAPACITANCE = CHARGE / VOLTAGE
+
+MAGNETIC_FIELD = MASS / (CURRENT * TIME ** 2)
+
+
+======================== units/expression.py ========================
+
+import ast
+import math
+import operator
+
+import numpy as np
+
+from .quantities import Quantity
+from .registry import get_unit, is_unit
+
+
+_BINARY_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Pow: operator.pow,
+    ast.Mod: operator.mod,
+}
+
+_UNARY_OPERATORS = {
+    ast.UAdd: operator.pos,
+    ast.USub: operator.neg,
+}
+
+_FUNCTIONS = {
+    "sin": np.sin,
+    "cos": np.cos,
+    "tan": np.tan,
+    "asin": np.arcsin,
+    "acos": np.arccos,
+    "atan": np.arctan,
+    "sinh": np.sinh,
+    "cosh": np.cosh,
+    "tanh": np.tanh,
+    "sqrt": np.sqrt,
+    "abs": np.abs,
+    "exp": np.exp,
+    "ln": np.log,
+    "log": np.log10,
+    "log10": np.log10,
+}
+
+
+class QuantityExpressionEvaluator:
+    def __init__(self, variables=None, functions=None):
+        self.variables = variables or {}
+        self.functions = functions or {}
+
+    def evaluate(self, source):
+        source = source.replace("^", "**")
+
+        try:
+            tree = ast.parse(source, mode="eval")
+        except SyntaxError as exc:
+            raise ValueError(f"Invalid expression: {source}") from exc
+
+        return self._eval(tree.body)
+
+    def _eval(self, node):
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, bool):
+                raise ValueError("Boolean values are not supported")
+            if isinstance(node.value, (int, float)):
+                return node.value
+            raise ValueError(f"Unsupported constant: {node.value!r}")
+
+        if isinstance(node, ast.Name):
+            return self._resolve_name(node.id)
+
+        if isinstance(node, ast.BinOp):
+            operation = _BINARY_OPERATORS.get(type(node.op))
+            if operation is None:
+                raise ValueError("Unsupported binary operator")
+
+            left = self._eval(node.left)
+            right = self._eval(node.right)
+
+            return operation(left, right)
+
+        if isinstance(node, ast.UnaryOp):
+            operation = _UNARY_OPERATORS.get(type(node.op))
+            if operation is None:
+                raise ValueError("Unsupported unary operator")
+
+            return operation(self._eval(node.operand))
+
+        if isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name):
+                raise ValueError("Only direct function calls are supported")
+
+            name = node.func.id
+
+            args = [self._eval(arg) for arg in node.args]
+            kwargs = {
+                keyword.arg: self._eval(keyword.value)
+                for keyword in node.keywords
+            }
+
+            if name in self.functions:
+                return self.functions[name](*args, **kwargs)
+
+            function = _FUNCTIONS.get(name)
+
+            if function is None:
+                raise ValueError(f"Unknown function: {name}")
+
+            if kwargs:
+                raise ValueError("Keyword arguments are not supported")
+
+            if len(args) != 1:
+                raise ValueError(f"{name} expects one argument")
+
+            value = args[0]
+
+            if isinstance(value, Quantity):
+                if not value.is_dimensionless:
+                    raise ValueError(
+                        f"Function {name} requires a dimensionless argument"
+                    )
+                value = value.value
+
+            result = function(value)
+
+            if isinstance(result, np.ndarray):
+                return result.item() if result.ndim == 0 else result
+
+            return float(result)
+
+        raise ValueError(
+            f"Unsupported expression element: {type(node).__name__}"
+        )
+
+    def _resolve_name(self, name):
+        if name in self.variables:
+            return self.variables[name]
+
+        if is_unit(name):
+            unit = get_unit(name)
+            return Quantity(
+                unit.scale_to_si,
+                unit.dimension,
+            )
+
+        if name == "pi":
+            return math.pi
+
+        if name == "e":
+            return math.e
+
+        raise ValueError(f"Unknown name: {name}")
+
+
+======================== units/quantities.py ========================
+
+from dataclasses import dataclass
+from numbers import Number
+
+import numpy as np
+
+from .dimensions import DIMENSIONLESS, Dimension
+from core.errors import DimensionError
+
+import sympy as sp
+
+from dataclasses import dataclass, field
+from collections.abc import Mapping
+from types import MappingProxyType
+
+import sympy as sp
+
+
+@dataclass(frozen=True, eq=False)
+class Quantity:
+    value: object
+    dimension: Dimension = DIMENSIONLESS
+
+    __array_priority__ = 1000
+
+    def __post_init__(self):
+        if not isinstance(self.dimension, Dimension):
+            raise TypeError("dimension must be a Dimension")
+
+    def _check_compatible(self, other):
+        if not isinstance(other, Quantity):
+            raise DimensionError(
+                "Операция требует физическую величину"
+            )
+
+        if self.dimension != other.dimension:
+            raise DimensionError(
+                f"Несовместимые размерности: "
+                f"{self.dimension} и {other.dimension}"
+            )
+
+    def __add__(self, other):
+        self._check_compatible(other)
+
+        return Quantity(
+            self.value + other.value,
+            self.dimension,
+        )
+
+    def __radd__(self, other):
+        return self.__add__(other)
+
+    def __sub__(self, other):
+        self._check_compatible(other)
+
+        return Quantity(
+            self.value - other.value,
+            self.dimension,
+        )
+
+    def __rsub__(self, other):
+        if not isinstance(other, Quantity):
+            return NotImplemented
+
+        return other.__sub__(self)
+
+    def __mul__(self, other):
+        if isinstance(other, Quantity):
+            return Quantity(
+                self.value * other.value,
+                self.dimension * other.dimension,
+            )
+
+        if isinstance(other, Number) or isinstance(other, np.ndarray):
+            return Quantity(
+                self.value * other,
+                self.dimension,
+            )
+
+        return NotImplemented
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __truediv__(self, other):
+        if isinstance(other, Quantity):
+            return Quantity(
+                self.value / other.value,
+                self.dimension / other.dimension,
+            )
+
+        if isinstance(other, Number) or isinstance(other, np.ndarray):
+            return Quantity(
+                self.value / other,
+                self.dimension,
+            )
+
+        return NotImplemented
+
+    def __rtruediv__(self, other):
+        if isinstance(other, Number) or isinstance(other, np.ndarray):
+            return Quantity(
+                other / self.value,
+                DIMENSIONLESS / self.dimension,
+            )
+
+        return NotImplemented
+
+    def __pow__(self, power):
+        if isinstance(power, Quantity):
+            if not power.dimension.is_dimensionless:
+                raise DimensionError(
+                    "Показатель степени должен быть безразмерным"
+                )
+            power = power.value
+
+        if not isinstance(power, Number):
+            raise TypeError(
+                "Показатель степени должен быть числом"
+            )
+
+        return Quantity(
+            self.value ** power,
+            self.dimension ** power,
+        )
+
+    def __neg__(self):
+        return Quantity(
+            -self.value,
+            self.dimension,
+        )
+
+    def __pos__(self):
+        return self
+
+    def __abs__(self):
+        return Quantity(
+            abs(self.value),
+            self.dimension,
+        )
+
+    def __eq__(self, other):
+        if not isinstance(other, Quantity):
+            return False
+
+        if self.dimension != other.dimension:
+            return False
+
+        return bool(np.array_equal(self.value, other.value))
+
+    def __lt__(self, other):
+        self._check_compatible(other)
+        return self.value < other.value
+
+    def __le__(self, other):
+        self._check_compatible(other)
+        return self.value <= other.value
+
+    def __gt__(self, other):
+        self._check_compatible(other)
+        return self.value > other.value
+
+    def __ge__(self, other):
+        self._check_compatible(other)
+        return self.value >= other.value
+
+    @property
+    def is_dimensionless(self):
+        return self.dimension.is_dimensionless
+
+    def __repr__(self):
+        return (
+            f"Quantity(value={self.value!r}, "
+            f"dimension={self.dimension!r})"
+        )
+
+    def __str__(self):
+        return f"{self.value} [{self.dimension}]"
+
+
+    
+@dataclass(frozen=True, eq=False)
+class SymbolicQuantity:
+    expression: sp.Expr
+    dimension: Dimension | None = None
+    symbol_dimensions: Mapping = field(default_factory=dict)
+
+    def __post_init__(self):
+        expression = sp.sympify(self.expression)
+
+        if self.dimension is not None and not isinstance(
+            self.dimension, Dimension
+        ):
+            raise TypeError("dimension must be a Dimension")
+
+        dimensions = {}
+
+        for symbol, dimension in self.symbol_dimensions.items():
+            symbol = sp.sympify(symbol)
+
+            if not isinstance(symbol, sp.Symbol):
+                raise TypeError("Dimension keys must be SymPy symbols")
+
+            if not isinstance(dimension, Dimension):
+                raise TypeError("Symbol dimensions must be Dimension")
+
+            dimensions[symbol] = dimension
+
+        object.__setattr__(self, "expression", expression)
+        object.__setattr__(
+            self,
+            "symbol_dimensions",
+            MappingProxyType(dimensions),
+        )
+
+        if dimensions:
+            inferred = self._infer_dimension(expression, dimensions)
+
+            if self.dimension is None:
+                object.__setattr__(self, "dimension", inferred)
+
+        elif self.dimension is None:
+            if expression.free_symbols:
+                raise DimensionError(
+                    "Symbol dimensions are required for symbolic expressions"
+                )
+
+            object.__setattr__(self, "dimension", DIMENSIONLESS)
+
+    @classmethod
+    def _infer_dimension(cls, expression, dimensions):
+        expression = sp.sympify(expression)
+
+        if expression.is_Number or expression.is_NumberSymbol:
+            return DIMENSIONLESS
+
+        if expression.is_Symbol:
+            try:
+                return dimensions[expression]
+            except KeyError:
+                raise DimensionError(
+                    f"Unknown symbol dimension: {expression}"
+                ) from None
+
+        if expression.is_Add:
+            result = cls._infer_dimension(
+                expression.args[0], dimensions
+            )
+
+            for term in expression.args[1:]:
+                current = cls._infer_dimension(term, dimensions)
+
+                if current != result:
+                    raise DimensionError(
+                        "Cannot add expressions with different dimensions: "
+                        f"{result} and {current}"
+                    )
+
+            return result
+
+        if expression.is_Mul:
+            result = DIMENSIONLESS
+
+            for factor in expression.args:
+                result = result * cls._infer_dimension(
+                    factor, dimensions
+                )
+
+            return result
+
+        if expression.is_Pow:
+            base, exponent = expression.args
+            base_dimension = cls._infer_dimension(base, dimensions)
+            exponent_dimension = cls._infer_dimension(
+                exponent, dimensions
+            )
+
+            if not exponent_dimension.is_dimensionless:
+                raise DimensionError(
+                    "Exponent must be dimensionless"
+                )
+
+            if not exponent.is_number:
+                if not base_dimension.is_dimensionless:
+                    raise DimensionError(
+                        "Dimensioned base requires a numeric exponent"
+                    )
+
+                return DIMENSIONLESS
+
+            return base_dimension ** exponent
+
+        if expression.is_Function:
+            name = expression.func.__name__
+
+            if name in ("Abs",):
+                return cls._infer_dimension(
+                    expression.args[0], dimensions
+                )
+
+            for argument in expression.args:
+                argument_dimension = cls._infer_dimension(
+                    argument, dimensions
+                )
+
+                if not argument_dimension.is_dimensionless:
+                    raise DimensionError(
+                        f"Function {name} requires dimensionless arguments"
+                    )
+
+            return DIMENSIONLESS
+
+        raise DimensionError(
+            f"Cannot determine dimension of expression: {expression}"
+        )
+
+    @staticmethod
+    def _merge_dimensions(first, second):
+        result = dict(first)
+
+        for symbol, dimension in second.items():
+            if symbol in result and result[symbol] != dimension:
+                raise DimensionError(
+                    f"Conflicting dimensions for symbol {symbol}"
+                )
+
+            result[symbol] = dimension
+
+        return result
+
+    def _check_compatible(self, other):
+        if not isinstance(other, SymbolicQuantity):
+            raise DimensionError(
+                "Operation requires another SymbolicQuantity"
+            )
+
+        if self.dimension != other.dimension:
+            raise DimensionError(
+                f"Incompatible dimensions: "
+                f"{self.dimension} and {other.dimension}"
+            )
+
+    def __add__(self, other):
+        self._check_compatible(other)
+
+        dimensions = self._merge_dimensions(
+            self.symbol_dimensions,
+            other.symbol_dimensions,
+        )
+
+        return SymbolicQuantity(
+            self.expression + other.expression,
+            self.dimension,
+            dimensions,
+        )
+
+    def __radd__(self, other):
+        if other == 0:
+            return self
+
+        return self.__add__(other)
+
+    def __sub__(self, other):
+        self._check_compatible(other)
+
+        dimensions = self._merge_dimensions(
+            self.symbol_dimensions,
+            other.symbol_dimensions,
+        )
+
+        return SymbolicQuantity(
+            self.expression - other.expression,
+            self.dimension,
+            dimensions,
+        )
+
+    def __rsub__(self, other):
+        if isinstance(other, SymbolicQuantity):
+            return other.__sub__(self)
+
+        return NotImplemented
+
+    def __mul__(self, other):
+        if isinstance(other, SymbolicQuantity):
+            dimensions = self._merge_dimensions(
+                self.symbol_dimensions,
+                other.symbol_dimensions,
+            )
+
+            return SymbolicQuantity(
+                self.expression * other.expression,
+                self.dimension * other.dimension,
+                dimensions,
+            )
+
+        return SymbolicQuantity(
+            self.expression * sp.sympify(other),
+            self.dimension,
+            self.symbol_dimensions,
+        )
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __truediv__(self, other):
+        if isinstance(other, SymbolicQuantity):
+            dimensions = self._merge_dimensions(
+                self.symbol_dimensions,
+                other.symbol_dimensions,
+            )
+
+            return SymbolicQuantity(
+                self.expression / other.expression,
+                self.dimension / other.dimension,
+                dimensions,
+            )
+
+        return SymbolicQuantity(
+            self.expression / sp.sympify(other),
+            self.dimension,
+            self.symbol_dimensions,
+        )
+
+    def __rtruediv__(self, other):
+        return SymbolicQuantity(
+            sp.sympify(other) / self.expression,
+            DIMENSIONLESS / self.dimension,
+            self.symbol_dimensions,
+        )
+
+    def __pow__(self, power):
+        if isinstance(power, SymbolicQuantity):
+            if not power.dimension.is_dimensionless:
+                raise DimensionError("Exponent must be dimensionless")
+
+            power = power.expression
+
+        power = sp.sympify(power)
+
+        if not power.is_number and not self.dimension.is_dimensionless:
+            raise DimensionError(
+                "A dimensioned quantity requires a numeric exponent"
+            )
+
+        return SymbolicQuantity(
+            self.expression ** power,
+            self.dimension ** power if power.is_number else DIMENSIONLESS,
+            self.symbol_dimensions,
+        )
+
+    def __neg__(self):
+        return SymbolicQuantity(
+            -self.expression,
+            self.dimension,
+            self.symbol_dimensions,
+        )
+
+    def __pos__(self):
+        return self
+
+    def __abs__(self):
+        return SymbolicQuantity(
+            sp.Abs(self.expression),
+            self.dimension,
+            self.symbol_dimensions,
+        )
+
+    def diff(self, variable, order=1):
+        if not isinstance(variable, sp.Symbol):
+            raise TypeError("variable must be a SymPy Symbol")
+
+        if not isinstance(order, int) or order < 0:
+            raise ValueError(
+                "Differentiation order must be non-negative"
+            )
+
+        variable_dimension = self.symbol_dimensions.get(variable)
+
+        result_dimension = self.dimension
+
+        if variable_dimension is not None:
+            result_dimension = (
+                result_dimension / (variable_dimension ** order)
+            )
+
+        return SymbolicQuantity(
+            sp.diff(self.expression, variable, order),
+            result_dimension,
+            self.symbol_dimensions,
+        )
+
+    def integrate(
+        self,
+        variable,
+        lower=None,
+        upper=None,
+        variable_dimension=None,
+    ):
+        if not isinstance(variable, sp.Symbol):
+            raise TypeError("variable must be a SymPy Symbol")
+
+        if (lower is None) != (upper is None):
+            raise ValueError("Both integration limits must be specified")
+
+        if variable_dimension is None:
+            variable_dimension = self.symbol_dimensions.get(variable)
+
+        if variable_dimension is None:
+            raise ValueError(
+                "variable_dimension must be specified"
+            )
+
+        if not isinstance(variable_dimension, Dimension):
+            raise TypeError(
+                "variable_dimension must be a Dimension"
+            )
+
+        if lower is None:
+            result = sp.integrate(self.expression, variable)
+        else:
+            if isinstance(lower, SymbolicQuantity):
+                if lower.dimension != variable_dimension:
+                    raise DimensionError(
+                        "Lower integration limit has incompatible dimension"
+                    )
+                lower = lower.expression
+
+            if isinstance(upper, SymbolicQuantity):
+                if upper.dimension != variable_dimension:
+                    raise DimensionError(
+                        "Upper integration limit has incompatible dimension"
+                    )
+                upper = upper.expression
+
+            result = sp.integrate(
+                self.expression,
+                (variable, sp.sympify(lower), sp.sympify(upper)),
+            )
+
+        return SymbolicQuantity(
+            result,
+            self.dimension * variable_dimension,
+            self.symbol_dimensions,
+        )
+
+    def subs(self, *args, **kwargs):
+        return SymbolicQuantity(
+            self.expression.subs(*args, **kwargs),
+            self.dimension,
+            self.symbol_dimensions,
+        )
+
+    def simplify(self):
+        return SymbolicQuantity(
+            sp.simplify(self.expression),
+            self.dimension,
+            self.symbol_dimensions,
+        )
+
+    def __eq__(self, other):
+        if not isinstance(other, SymbolicQuantity):
+            return False
+
+        return (
+            self.dimension == other.dimension
+            and sp.simplify(
+                self.expression - other.expression
+            ) == 0
+        )
+
+    def __repr__(self):
+        return (
+            f"SymbolicQuantity("
+            f"expression={self.expression!r}, "
+            f"dimension={self.dimension!r}, "
+            f"symbol_dimensions={dict(self.symbol_dimensions)!r})"
+        )
+
+    def __str__(self):
+        return f"{self.expression} [{self.dimension}]"
+
+
+======================== units/registry.py ========================
+
+from types import MappingProxyType
+
+from .systems import SI, CGS_ESU, CGS_EMU, GAUSSIAN
+
+
+_UNIT_ALIASES = {
+    # SI base units
+    "m": (SI, "meter"),
+    "meter": (SI, "meter"),
+    "kg": (SI, "kilogram"),
+    "kilogram": (SI, "kilogram"),
+    "s": (SI, "second"),
+    "second": (SI, "second"),
+    "A": (SI, "ampere"),
+    "ampere": (SI, "ampere"),
+    "K": (SI, "kelvin"),
+    "kelvin": (SI, "kelvin"),
+    "mol": (SI, "mole"),
+    "mole": (SI, "mole"),
+    "cd": (SI, "candela"),
+    "candela": (SI, "candela"),
+
+    # SI derived units
+    "Hz": (SI, "hertz"),
+    "hertz": (SI, "hertz"),
+    "N": (SI, "newton"),
+    "newton": (SI, "newton"),
+    "J": (SI, "joule"),
+    "joule": (SI, "joule"),
+    "W": (SI, "watt"),
+    "watt": (SI, "watt"),
+    "Pa": (SI, "pascal"),
+    "pascal": (SI, "pascal"),
+    "C": (SI, "coulomb"),
+    "coulomb": (SI, "coulomb"),
+    "V": (SI, "volt"),
+    "volt": (SI, "volt"),
+    "ohm": (SI, "ohm"),
+    "F": (SI, "farad"),
+    "farad": (SI, "farad"),
+    "T": (SI, "tesla"),
+    "tesla": (SI, "tesla"),
+
+    # CGS mechanical
+    "cm": (CGS_ESU, "centimeter"),
+    "centimeter": (CGS_ESU, "centimeter"),
+    "g": (CGS_ESU, "gram"),
+    "gram": (CGS_ESU, "gram"),
+    "dyn": (CGS_ESU, "dyne"),
+    "dyne": (CGS_ESU, "dyne"),
+    "erg": (CGS_ESU, "erg"),
+    "Ba": (CGS_ESU, "barye"),
+    "barye": (CGS_ESU, "barye"),
+    "Gal": (CGS_ESU, "gal"),
+    "gal": (CGS_ESU, "gal"),
+
+    # CGS-ESU
+    "statC": (CGS_ESU, "statcoulomb"),
+    "statcoulomb": (CGS_ESU, "statcoulomb"),
+    "statA": (CGS_ESU, "statampere"),
+    "statampere": (CGS_ESU, "statampere"),
+    "statV": (CGS_ESU, "statvolt"),
+    "statvolt": (CGS_ESU, "statvolt"),
+    "statohm": (CGS_ESU, "statohm"),
+
+    # CGS-EMU
+    "abC": (CGS_EMU, "abcoulomb"),
+    "abcoulomb": (CGS_EMU, "abcoulomb"),
+    "abA": (CGS_EMU, "abampere"),
+    "abampere": (CGS_EMU, "abampere"),
+    "abV": (CGS_EMU, "abvolt"),
+    "abvolt": (CGS_EMU, "abvolt"),
+    "abohm": (CGS_EMU, "abohm"),
+
+    # Magnetic units
+    "gauss": (GAUSSIAN, "gauss"),
+    "maxwell": (GAUSSIAN, "maxwell"),
+    "Mx": (GAUSSIAN, "maxwell"),
+}
+
+
+def _build_registry():
+    registry = {}
+
+    for alias, (system, unit_name) in _UNIT_ALIASES.items():
+        registry[alias] = system.get_unit(unit_name)
+
+    return MappingProxyType(registry)
+
+
+UNITS = _build_registry()
+
+
+def get_unit(name: str):
+    try:
+        return UNITS[name]
+    except KeyError:
+        raise KeyError(f"Unknown unit: {name}") from None
+
+
+def is_unit(name: str) -> bool:
+    return name in UNITS
+
+
+======================== units/systems.py ========================
+
+from dataclasses import dataclass
+from types import MappingProxyType
+
+from .dimensions import (
+    DIMENSIONLESS,
+    LENGTH,
+    MASS,
+    TIME,
+    CURRENT,
+    TEMPERATURE,
+    AMOUNT,
+    LUMINOUS_INTENSITY,
+    AREA,
+    VOLUME,
+    VELOCITY,
+    ACCELERATION,
+    FREQUENCY,
+    FORCE,
+    ENERGY,
+    POWER,
+    PRESSURE,
+    DENSITY,
+    CHARGE,
+    VOLTAGE,
+    RESISTANCE,
+    CAPACITANCE,
+    MAGNETIC_FIELD,
+)
+
+
+@dataclass(frozen=True)
+class Unit:
+    """
+    Unit definition.
+
+    scale_to_si:
+        Multiplier converting this unit to the corresponding SI unit.
+
+    Example:
+        1 cm = 0.01 m
+    """
+
+    name: str
+    symbol: str
+    dimension: object
+    scale_to_si: float
+    system: str
+
+    def __post_init__(self):
+        if self.scale_to_si <= 0:
+            raise ValueError("Unit scale must be positive")
+
+
+@dataclass(frozen=True)
+class UnitSystem:
+    name: str
+    symbol: str
+    units: object
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "units",
+            MappingProxyType(dict(self.units)),
+        )
+
+    def get_unit(self, name: str) -> Unit:
+        try:
+            return self.units[name]
+        except KeyError:
+            raise KeyError(
+                f"Unit {name!r} is not defined in {self.name}"
+            ) from None
+
+
+def _unit(name, symbol, dimension, scale, system):
+    return Unit(
+        name=name,
+        symbol=symbol,
+        dimension=dimension,
+        scale_to_si=scale,
+        system=system,
+    )
+
+
+# ---------------------------------------------------------------------
+# SI
+# ---------------------------------------------------------------------
+
+SI_UNITS = {
+    "dimensionless": _unit(
+        "dimensionless", "1", DIMENSIONLESS, 1, "SI"
+    ),
+    "meter": _unit("meter", "m", LENGTH, 1, "SI"),
+    "kilogram": _unit("kilogram", "kg", MASS, 1, "SI"),
+    "second": _unit("second", "s", TIME, 1, "SI"),
+    "ampere": _unit("ampere", "A", CURRENT, 1, "SI"),
+    "kelvin": _unit("kelvin", "K", TEMPERATURE, 1, "SI"),
+    "mole": _unit("mole", "mol", AMOUNT, 1, "SI"),
+    "candela": _unit("candela", "cd", LUMINOUS_INTENSITY, 1, "SI"),
+
+    "hertz": _unit("hertz", "Hz", FREQUENCY, 1, "SI"),
+    "newton": _unit("newton", "N", FORCE, 1, "SI"),
+    "joule": _unit("joule", "J", ENERGY, 1, "SI"),
+    "watt": _unit("watt", "W", POWER, 1, "SI"),
+    "pascal": _unit("pascal", "Pa", PRESSURE, 1, "SI"),
+
+    "coulomb": _unit("coulomb", "C", CHARGE, 1, "SI"),
+    "volt": _unit("volt", "V", VOLTAGE, 1, "SI"),
+    "ohm": _unit("ohm", "Ω", RESISTANCE, 1, "SI"),
+    "farad": _unit("farad", "F", CAPACITANCE, 1, "SI"),
+    "tesla": _unit("tesla", "T", MAGNETIC_FIELD, 1, "SI"),
+}
+
+
+# ---------------------------------------------------------------------
+# CGS mechanical units
+# ---------------------------------------------------------------------
+
+CGS_MECHANICAL_UNITS = {
+    "centimeter": _unit(
+        "centimeter", "cm", LENGTH, 1e-2, "CGS"
+    ),
+    "gram": _unit(
+        "gram", "g", MASS, 1e-3, "CGS"
+    ),
+    "second": _unit(
+        "second", "s", TIME, 1, "CGS"
+    ),
+    "dyne": _unit(
+        "dyne", "dyn", FORCE, 1e-5, "CGS"
+    ),
+    "erg": _unit(
+        "erg", "erg", ENERGY, 1e-7, "CGS"
+    ),
+    "barye": _unit(
+        "barye", "Ba", PRESSURE, 0.1, "CGS"
+    ),
+    "gal": _unit(
+        "gal", "Gal", ACCELERATION, 1e-2, "CGS"
+    ),
+}
+
+
+# ---------------------------------------------------------------------
+# CGS-ESU: electrostatic system
+# ---------------------------------------------------------------------
+
+CGS_ESU_UNITS = {
+    **CGS_MECHANICAL_UNITS,
+
+    "statcoulomb": _unit(
+        "statcoulomb", "statC", CHARGE,
+        3.3356409519815204e-10, "CGS-ESU"
+    ),
+    "statampere": _unit(
+        "statampere", "statA", CURRENT,
+        3.3356409519815204e-10, "CGS-ESU"
+    ),
+    "statvolt": _unit(
+        "statvolt", "statV", VOLTAGE,
+        299.792458, "CGS-ESU"
+    ),
+    "statohm": _unit(
+        "statohm", "statΩ", RESISTANCE,
+        8.987551787368176e11, "CGS-ESU"
+    ),
+}
+
+
+# ---------------------------------------------------------------------
+# CGS-EMU: electromagnetic system
+# ---------------------------------------------------------------------
+
+CGS_EMU_UNITS = {
+    **CGS_MECHANICAL_UNITS,
+
+    "abcoulomb": _unit(
+        "abcoulomb", "abC", CHARGE, 10, "CGS-EMU"
+    ),
+    "abampere": _unit(
+        "abampere", "abA", CURRENT, 10, "CGS-EMU"
+    ),
+    "abvolt": _unit(
+        "abvolt", "abV", VOLTAGE, 1e-8, "CGS-EMU"
+    ),
+    "abohm": _unit(
+        "abohm", "abΩ", RESISTANCE, 1e-9, "CGS-EMU"
+    ),
+    "maxwell": _unit(
+        "maxwell", "Mx", MAGNETIC_FIELD * AREA,
+        1e-8, "CGS-EMU"
+    ),
+    "gauss": _unit(
+        "gauss", "G", MAGNETIC_FIELD, 1e-4, "CGS-EMU"
+    ),
+}
+
+
+# ---------------------------------------------------------------------
+# Gaussian system
+# ---------------------------------------------------------------------
+
+GAUSSIAN_UNITS = {
+    **CGS_MECHANICAL_UNITS,
+
+    "statcoulomb": _unit(
+        "statcoulomb", "statC", CHARGE,
+        3.3356409519815204e-10, "Gaussian"
+    ),
+    "statampere": _unit(
+        "statampere", "statA", CURRENT,
+        3.3356409519815204e-10, "Gaussian"
+    ),
+    "statvolt": _unit(
+        "statvolt", "statV", VOLTAGE,
+        299.792458, "Gaussian"
+    ),
+    "gauss": _unit(
+        "gauss", "G", MAGNETIC_FIELD, 1e-4, "Gaussian"
+    ),
+    "maxwell": _unit(
+        "maxwell", "Mx", MAGNETIC_FIELD * AREA,
+        1e-8, "Gaussian"
+    ),
+}
+
+
+SI = UnitSystem("International System of Units", "SI", SI_UNITS)
+
+CGS_ESU = UnitSystem(
+    "Centimeter-Gram-Second Electrostatic System",
+    "CGS-ESU",
+    CGS_ESU_UNITS,
+)
+
+CGS_EMU = UnitSystem(
+    "Centimeter-Gram-Second Electromagnetic System",
+    "CGS-EMU",
+    CGS_EMU_UNITS,
+)
+
+GAUSSIAN = UnitSystem(
+    "Gaussian CGS System",
+    "Gaussian",
+    GAUSSIAN_UNITS,
+)
+
+SYSTEMS = {
+    "SI": SI,
+    "CGS-ESU": CGS_ESU,
+    "CGS-EMU": CGS_EMU,
+    "Gaussian": GAUSSIAN,
+}
+
+
+def get_system(name: str) -> UnitSystem:
+    try:
+        return SYSTEMS[name]
+    except KeyError:
+        raise KeyError(f"Unknown unit system: {name}") from None

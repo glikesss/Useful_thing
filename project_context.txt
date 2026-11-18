@@ -1,0 +1,1666 @@
+﻿
+========== core\engine.py ==========
+import sympy as sp
+import numpy as np
+
+from .parser import (
+    ExpressionParser,
+    VariableDefinition,
+    FunctionDefinition,
+)
+from .variables import VariableStore
+from .dependencies import topological_sort
+from .errors import (
+    EvaluationError,
+    DependencyError,
+)
+
+from .calculus import (
+    differentiate,
+    integrate,
+    numerical_integral,
+    numerical_cumulative_integral,
+)
+
+
+class MathEngine:
+    def __init__(self):
+        self.lines = []
+
+        self.parser = ExpressionParser()
+        self.variables = VariableStore()
+
+        self.definitions = {}
+        self.functions = {}
+        self.compiled_functions = {}
+
+    # -------------------------------------------------
+    # Р РђР‘РћРўРђ РЎ Р¤РћР РњРЈР›РђРњР
+    # -------------------------------------------------
+
+    def add_line(self, source):
+        self.lines.append(source)
+
+        try:
+            self._rebuild()
+        except Exception:
+            self.lines.pop()
+            self._rebuild()
+            raise
+
+        return len(self.lines) - 1
+
+    def update_line(self, index, source):
+        old_source = self.lines[index]
+        self.lines[index] = source
+
+        try:
+            self._rebuild()
+        except Exception:
+            self.lines[index] = old_source
+            self._rebuild()
+            raise
+
+    def remove_line(self, index):
+        old_source = self.lines.pop(index)
+
+        try:
+            self._rebuild()
+        except Exception:
+            self.lines.insert(index, old_source)
+            self._rebuild()
+            raise
+
+    def set_lines(self, sources):
+        old_lines = self.lines
+        self.lines = list(sources)
+
+        try:
+            self._rebuild()
+        except Exception:
+            self.lines = old_lines
+            self._rebuild()
+            raise
+
+    def clear(self):
+        self.lines.clear()
+        self._rebuild()
+
+    # -------------------------------------------------
+    # РџР•Р Р•РЎР‘РћР РљРђ РЇР”Р Рђ
+    # -------------------------------------------------
+
+    def _rebuild(self):
+        self.parser = ExpressionParser()
+
+        self.variables.clear()
+        self.definitions.clear()
+        self.functions.clear()
+        self.compiled_functions.clear()
+
+        # РЎРЅР°С‡Р°Р»Р° СЂР°Р·Р±РёСЂР°РµРј РІСЃРµ СЃС‚СЂРѕРєРё.
+        # РџРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРёРµ С„СѓРЅРєС†РёРё РґРѕР»Р¶РЅС‹ Р±С‹С‚СЊ РѕР±СЉСЏРІР»РµРЅС‹
+        # РґРѕ РїРµСЂРІРѕРіРѕ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЏ.
+        for source in self.lines:
+            parsed = self.parser.parse_definition(source)
+            definition = parsed.definition
+
+            if definition.name in self.definitions:
+                raise EvaluationError(
+                    f"РРјСЏ '{definition.name}' РѕРїСЂРµРґРµР»РµРЅРѕ РїРѕРІС‚РѕСЂРЅРѕ"
+                )
+
+            self.definitions[definition.name] = definition
+
+            if isinstance(definition, FunctionDefinition):
+                self.functions[definition.name] = definition
+                self.parser.register_function(definition)
+
+        self._calculate_variables()
+        self._compile_functions()
+
+    # -------------------------------------------------
+    # Р’Р«Р§РРЎР›Р•РќРР• РџР•Р Р•РњР•РќРќР«РҐ
+    # -------------------------------------------------
+
+    def _calculate_variables(self):
+        variable_definitions = {
+            name: definition
+            for name, definition in self.definitions.items()
+            if isinstance(definition, VariableDefinition)
+        }
+
+        variable_names = set(variable_definitions)
+
+        graph = {}
+
+        for name, definition in variable_definitions.items():
+            dependencies = {
+                str(symbol)
+                for symbol in definition.expression.free_symbols
+                if str(symbol) in variable_names
+            }
+
+            graph[name] = dependencies
+
+        order = topological_sort(graph)
+
+        resolved = {}
+
+        for name in order:
+            expression = variable_definitions[name].expression
+            expression = expression.subs(resolved)
+
+            if expression.free_symbols:
+                unknown = sorted(
+                    str(symbol)
+                    for symbol in expression.free_symbols
+                )
+
+                raise EvaluationError(
+                    f"Р’ РїРµСЂРµРјРµРЅРЅРѕР№ '{name}' РЅРµ РѕРїСЂРµРґРµР»РµРЅС‹: "
+                    + ", ".join(unknown)
+                )
+
+            try:
+                value = sp.N(expression)
+
+                if value.is_real is False:
+                    raise EvaluationError(
+                        f"РџРµСЂРµРјРµРЅРЅР°СЏ '{name}' РёРјРµРµС‚ РєРѕРјРїР»РµРєСЃРЅРѕРµ Р·РЅР°С‡РµРЅРёРµ"
+                    )
+
+                if value.is_number:
+                    value = float(value)
+
+                resolved[name] = value
+
+            except EvaluationError:
+                raise
+            except Exception as exc:
+                raise EvaluationError(
+                    f"РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹С‡РёСЃР»РёС‚СЊ '{name}': {exc}"
+                ) from exc
+
+        self.variables.update(resolved)
+
+    # -------------------------------------------------
+    # РљРћРњРџРР›РЇР¦РРЇ РџРћР›Р¬Р—РћР’РђРўР•Р›Р¬РЎРљРРҐ Р¤РЈРќРљР¦РР™
+    # -------------------------------------------------
+
+    def _compile_functions(self):
+        global_values = {
+            sp.Symbol(name): value
+            for name, value in self.variables.as_dict().items()
+        }
+
+        for name, definition in self.functions.items():
+            arguments = [
+                sp.Symbol(argument)
+                for argument in definition.arguments
+            ]
+
+            expression = definition.expression.subs(global_values)
+
+            if expression.has(sp.Integral):
+                raise EvaluationError(
+                    f"Р¤СѓРЅРєС†РёСЏ '{name}' СЃРѕРґРµСЂР¶РёС‚ РёРЅС‚РµРіСЂР°Р», "
+                    "РєРѕС‚РѕСЂС‹Р№ РЅРµ СѓРґР°Р»РѕСЃСЊ СЂРµС€РёС‚СЊ СЃРёРјРІРѕР»СЊРЅРѕ. "
+                    "Р”Р»СЏ С‚Р°РєРёС… СЃР»СѓС‡Р°РµРІ РёСЃРїРѕР»СЊР·СѓР№ С‡РёСЃР»РµРЅРЅС‹Р№ РјРµС‚РѕРґ "
+                    "engine.cumulative() РёР»Рё engine.integrate()."
+                )
+
+            try:
+                compiled = sp.lambdify(
+                    arguments,
+                    expression,
+                    modules=["numpy", "math"],
+                )
+            except Exception as exc:
+                raise EvaluationError(
+                    f"РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ С„СѓРЅРєС†РёСЋ '{name}': {exc}"
+                ) from exc
+
+            self.compiled_functions[name] = compiled
+
+    # -------------------------------------------------
+    # Р’Р«Р§РРЎР›Р•РќРР• РџР РћРР—Р’РћР›Р¬РќРћР“Рћ Р’Р«Р РђР–Р•РќРРЇ
+    # -------------------------------------------------
+
+    def evaluate(self, source):
+        try:
+            expression = self.parser.parse_expression(source)
+
+            substitutions = {
+                sp.Symbol(name): value
+                for name, value in self.variables.as_dict().items()
+            }
+
+            expression = expression.subs(substitutions)
+
+            if expression.free_symbols:
+                unknown = sorted(
+                    str(symbol)
+                    for symbol in expression.free_symbols
+                )
+
+                raise EvaluationError(
+                    "РќРµРёР·РІРµСЃС‚РЅС‹Рµ РїРµСЂРµРјРµРЅРЅС‹Рµ: " + ", ".join(unknown)
+                )
+
+            if expression.is_number:
+                return float(sp.N(expression))
+
+            return expression
+
+        except EvaluationError:
+            raise
+        except Exception as exc:
+            raise EvaluationError(str(exc)) from exc
+
+    # -------------------------------------------------
+    # Р’Р«Р—РћР’ РџРћР›Р¬Р—РћР’РђРўР•Р›Р¬РЎРљРћР™ Р¤РЈРќРљР¦РР
+    # -------------------------------------------------
+
+    def call(self, name, *args, **kwargs):
+        if name not in self.compiled_functions:
+            raise EvaluationError(
+                f"Р¤СѓРЅРєС†РёСЏ '{name}' РЅРµ РЅР°Р№РґРµРЅР°"
+            )
+
+        definition = self.functions[name]
+
+        if len(args) > len(definition.arguments):
+            raise EvaluationError("РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р°СЂРіСѓРјРµРЅС‚РѕРІ")
+
+        values = dict(zip(definition.arguments, args))
+
+        for key, value in kwargs.items():
+            if key not in definition.arguments:
+                raise EvaluationError(
+                    f"РќРµРёР·РІРµСЃС‚РЅС‹Р№ Р°СЂРіСѓРјРµРЅС‚ '{key}'"
+                )
+
+            if key in values:
+                raise EvaluationError(
+                    f"РђСЂРіСѓРјРµРЅС‚ '{key}' РїРµСЂРµРґР°РЅ РґРІР°Р¶РґС‹"
+                )
+
+            values[key] = value
+
+        for key, default in definition.defaults.items():
+            default = default.subs({
+                sp.Symbol(var): value
+                for var, value in self.variables.as_dict().items()
+            })
+
+            if default.free_symbols:
+                raise EvaluationError(
+                    f"РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹С‡РёСЃР»РёС‚СЊ Р·РЅР°С‡РµРЅРёРµ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ '{key}'"
+                )
+
+            values.setdefault(key, float(default))
+
+        missing = [
+            arg for arg in definition.arguments
+            if arg not in values
+        ]
+
+        if missing:
+            raise EvaluationError(
+                "РќРµ РїРµСЂРµРґР°РЅС‹ Р°СЂРіСѓРјРµРЅС‚С‹: " + ", ".join(missing)
+            )
+
+        ordered_values = [
+            values[arg] for arg in definition.arguments
+        ]
+
+        try:
+            return self.compiled_functions[name](*ordered_values)
+        except Exception as exc:
+            raise EvaluationError(
+                f"РћС€РёР±РєР° РІС‹Р·РѕРІР° '{name}': {exc}"
+            ) from exc
+
+    # -------------------------------------------------
+    # РњРђРўР•РњРђРўРР§Р•РЎРљРР™ РђРќРђР›РР—
+    # -------------------------------------------------
+
+    def _prepare_calculus_expression(self, source):
+        expression = self.parser.parse_expression(source)
+
+        substitutions = {
+            sp.Symbol(name): value
+            for name, value in self.variables.as_dict().items()
+        }
+
+        return expression.subs(substitutions)
+
+    def differentiate(self, source, variable="x", order=1):
+        """
+        РЎРёРјРІРѕР»СЊРЅР°СЏ РїСЂРѕРёР·РІРѕРґРЅР°СЏ.
+
+        РџСЂРёРјРµСЂ:
+            engine.differentiate("x^3", "x", 2)
+        """
+
+        expression = self._prepare_calculus_expression(source)
+
+        return differentiate(
+            expression,
+            sp.Symbol(variable),
+            order,
+        )
+
+    def integrate(
+        self,
+        source,
+        variable="x",
+        lower=None,
+        upper=None,
+        numerical=True,
+    ):
+        """
+        РЎРёРјРІРѕР»СЊРЅС‹Р№ РёРЅС‚РµРіСЂР°Р» СЃ С‡РёСЃР»РµРЅРЅС‹Рј СЂРµР·РµСЂРІРЅС‹Рј РјРµС‚РѕРґРѕРј.
+
+        Р‘РµР· РїСЂРµРґРµР»РѕРІ РІРѕР·РІСЂР°С‰Р°РµС‚ РЅРµРѕРїСЂРµРґРµР»С‘РЅРЅС‹Р№ РёРЅС‚РµРіСЂР°Р».
+        РЎ РїСЂРµРґРµР»Р°РјРё РІРѕР·РІСЂР°С‰Р°РµС‚ РѕРїСЂРµРґРµР»С‘РЅРЅС‹Р№ РёРЅС‚РµРіСЂР°Р».
+        """
+
+        expression = self._prepare_calculus_expression(source)
+        symbol = sp.Symbol(variable)
+
+        if lower is None and upper is None:
+            return integrate(expression, symbol)
+
+        if lower is None or upper is None:
+            raise EvaluationError(
+                "РќРµРѕР±С…РѕРґРёРјРѕ СѓРєР°Р·Р°С‚СЊ РѕР±Р° РїСЂРµРґРµР»Р° РёРЅС‚РµРіСЂРёСЂРѕРІР°РЅРёСЏ"
+            )
+
+        lower = float(lower)
+        upper = float(upper)
+
+        result = integrate(
+            expression,
+            symbol,
+            lower,
+            upper,
+        )
+
+        if not result.has(sp.Integral):
+            return float(sp.N(result))
+
+        if not numerical:
+            return result
+
+        return numerical_integral(
+            expression,
+            symbol,
+            lower,
+            upper,
+        )
+
+    def cumulative(
+        self,
+        source,
+        values,
+        variable="x",
+        start=0,
+    ):
+        """
+        Р§РёСЃР»РµРЅРЅС‹Р№ РЅР°РєРѕРїРёС‚РµР»СЊРЅС‹Р№ РёРЅС‚РµРіСЂР°Р».
+
+        values вЂ” РјР°СЃСЃРёРІ РєРѕРѕСЂРґРёРЅР°С‚ x.
+        Р’РѕР·РІСЂР°С‰Р°РµС‚ РјР°СЃСЃРёРІ Р·РЅР°С‡РµРЅРёР№ РёРЅС‚РµРіСЂР°Р»Р°.
+        """
+
+        expression = self._prepare_calculus_expression(source)
+
+        return numerical_cumulative_integral(
+            expression,
+            sp.Symbol(variable),
+            start,
+            values,
+        )
+
+    # -------------------------------------------------
+    # РРќР¤РћР РњРђР¦РРЇ Рћ Р”Р’РР–РљР•
+    # -------------------------------------------------
+
+    def get_variable(self, name):
+        if not self.variables.has(name):
+            raise EvaluationError(
+                f"РџРµСЂРµРјРµРЅРЅР°СЏ '{name}' РЅРµ РЅР°Р№РґРµРЅР°"
+            )
+
+        return self.variables.get(name)
+
+    def get_function_names(self):
+        return tuple(self.functions.keys())
+
+    def get_variable_names(self):
+        return self.variables.names()
+
+    def get_definition(self, name):
+        return self.definitions.get(name)
+
+========== core\parser.py ==========
+import ast
+import re
+from dataclasses import dataclass, field
+
+import sympy as sp
+
+from .errors import ParseError, UnknownNameError
+
+from .calculus import (
+    differentiate,
+    integrate,
+    cumulative_integral,
+)
+
+BUILTIN_FUNCTIONS = {
+    "sin": sp.sin,
+    "cos": sp.cos,
+    "tan": sp.tan,
+    "asin": sp.asin,
+    "acos": sp.acos,
+    "atan": sp.atan,
+    "sinh": sp.sinh,
+    "cosh": sp.cosh,
+    "tanh": sp.tanh,
+    "sqrt": sp.sqrt,
+    "abs": sp.Abs,
+    "ln": sp.log,
+    "log": sp.log,
+    "exp": sp.exp,
+}
+
+
+@dataclass
+class VariableDefinition:
+    name: str
+    expression: sp.Expr
+    source: str
+
+
+@dataclass
+class FunctionDefinition:
+    name: str
+    arguments: tuple[str, ...]
+    defaults: dict[str, sp.Expr]
+    expression: sp.Expr
+    source: str
+
+
+@dataclass
+class ParsedExpression:
+    definition: VariableDefinition | FunctionDefinition
+
+
+class ExpressionParser:
+    def __init__(self):
+        self.functions = {}
+
+    @staticmethod
+    def _split_assignment(source: str):
+        depth = 0
+
+        for index, char in enumerate(source):
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            elif char == "=" and depth == 0:
+                before = source[index - 1] if index else ""
+                after = source[index + 1] if index + 1 < len(source) else ""
+
+                if before in "<>=!" or after == "=":
+                    continue
+
+                return source[:index].strip(), source[index + 1:].strip()
+
+        return None, source.strip()
+
+    def parse_definition(self, source: str) -> ParsedExpression:
+        source = source.strip()
+
+        if not source:
+            raise ParseError("РџСѓСЃС‚РѕРµ РІС‹СЂР°Р¶РµРЅРёРµ")
+
+        left, right = self._split_assignment(source)
+
+        if left is None:
+            raise ParseError(
+                "РћР¶РёРґР°РµС‚СЃСЏ РѕРїСЂРµРґРµР»РµРЅРёРµ РІРёРґР° a = РІС‹СЂР°Р¶РµРЅРёРµ"
+            )
+
+        if not right:
+            raise ParseError("РџСЂР°РІР°СЏ С‡Р°СЃС‚СЊ РІС‹СЂР°Р¶РµРЅРёСЏ РїСѓСЃС‚Р°")
+
+        try:
+            left_ast = ast.parse(left, mode="eval").body
+        except SyntaxError as exc:
+            raise ParseError(f"РќРµРєРѕСЂСЂРµРєС‚РЅРѕРµ РѕРїСЂРµРґРµР»РµРЅРёРµ: {exc.msg}") from exc
+
+        if isinstance(left_ast, ast.Name):
+            expression = self.parse_expression(right)
+
+            definition = VariableDefinition(
+                name=left_ast.id,
+                expression=expression,
+                source=source,
+            )
+
+            return ParsedExpression(definition)
+
+        if isinstance(left_ast, ast.Call):
+            return ParsedExpression(
+                self._parse_function(left_ast, right, source)
+            )
+
+        raise ParseError(
+            "РЎР»РµРІР° РѕС‚ '=' РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РёРјСЏ РїРµСЂРµРјРµРЅРЅРѕР№ РёР»Рё С„СѓРЅРєС†РёРё"
+        )
+
+    def _parse_function(self, signature, right, source):
+        if not isinstance(signature.func, ast.Name):
+            raise ParseError("РќРµРєРѕСЂСЂРµРєС‚РЅРѕРµ РёРјСЏ С„СѓРЅРєС†РёРё")
+
+        name = signature.func.id
+
+        arguments = []
+        defaults = {}
+
+        for argument in signature.args:
+            if not isinstance(argument, ast.Name):
+                raise ParseError("РђСЂРіСѓРјРµРЅС‚С‹ С„СѓРЅРєС†РёРё РґРѕР»Р¶РЅС‹ Р±С‹С‚СЊ РёРјРµРЅР°РјРё")
+
+            arguments.append(argument.id)
+
+        for keyword in signature.keywords:
+            if keyword.arg is None:
+                raise ParseError("Р Р°СЃРїР°РєРѕРІРєР° Р°СЂРіСѓРјРµРЅС‚РѕРІ РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ")
+
+            if keyword.arg in arguments:
+                raise ParseError(
+                    f"РђСЂРіСѓРјРµРЅС‚ {keyword.arg} РѕР±СЉСЏРІР»РµРЅ РґРІР°Р¶РґС‹"
+                )
+
+            defaults[keyword.arg] = self.parse_expression(
+                ast.unparse(keyword.value)
+            )
+
+        all_arguments = arguments + list(defaults)
+
+        if len(set(all_arguments)) != len(all_arguments):
+            raise ParseError("РџРѕРІС‚РѕСЂСЏСЋС‰РёРµСЃСЏ Р°СЂРіСѓРјРµРЅС‚С‹ С„СѓРЅРєС†РёРё")
+
+        if not arguments and not defaults:
+            raise ParseError("РЈ С„СѓРЅРєС†РёРё РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ Р°СЂРіСѓРјРµРЅС‚")
+
+        symbols = {
+            argument: sp.Symbol(argument)
+            for argument in all_arguments
+        }
+
+        expression = self.parse_expression(
+            right,
+            local_symbols=symbols,
+        )
+
+        return FunctionDefinition(
+            name=name,
+            arguments=tuple(all_arguments),
+            defaults=defaults,
+            expression=expression,
+            source=source,
+        )
+
+    def parse_expression(self, source, local_symbols=None):
+        source = source.replace("^", "**")
+
+        try:
+            tree = ast.parse(source, mode="eval")
+        except SyntaxError as exc:
+            raise ParseError(f"РћС€РёР±РєР° СЃРёРЅС‚Р°РєСЃРёСЃР°: {exc.msg}") from exc
+
+        converter = _ExpressionConverter(
+            functions=self.functions,
+            local_symbols=local_symbols or {},
+        )
+
+        try:
+            return converter.convert(tree.body)
+        except ParseError:
+            raise
+        except Exception as exc:
+            raise ParseError(str(exc)) from exc
+
+    def register_function(self, definition):
+        self.functions[definition.name] = definition
+
+
+class _ExpressionConverter:
+    def __init__(self, functions, local_symbols):
+        self.functions = functions
+        self.local_symbols = local_symbols
+
+    
+    def convert(self, node):
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, bool):
+                raise ParseError("Р›РѕРіРёС‡РµСЃРєРёРµ Р·РЅР°С‡РµРЅРёСЏ РЅРµ РїРѕРґРґРµСЂР¶РёРІР°СЋС‚СЃСЏ")
+
+            if isinstance(node.value, (int, float)):
+                return sp.sympify(node.value)
+
+            raise ParseError("РџРѕРґРґРµСЂР¶РёРІР°СЋС‚СЃСЏ С‚РѕР»СЊРєРѕ С‡РёСЃР»РѕРІС‹Рµ РєРѕРЅСЃС‚Р°РЅС‚С‹")
+
+        if isinstance(node, ast.Name):
+            if node.id == "pi":
+                return sp.pi
+
+            if node.id == "e":
+                return sp.E
+
+            if node.id in self.local_symbols:
+                return self.local_symbols[node.id]
+
+            return sp.Symbol(node.id)
+
+        if isinstance(node, ast.BinOp):
+            left = self.convert(node.left)
+            right = self.convert(node.right)
+
+            operations = {
+                ast.Add: lambda: left + right,
+                ast.Sub: lambda: left - right,
+                ast.Mult: lambda: left * right,
+                ast.Div: lambda: left / right,
+                ast.Pow: lambda: left ** right,
+                ast.Mod: lambda: left % right,
+            }
+
+            operation = operations.get(type(node.op))
+
+            if operation is None:
+                raise ParseError("РќРµРїРѕРґРґРµСЂР¶РёРІР°РµРјР°СЏ РѕРїРµСЂР°С†РёСЏ")
+
+            return operation()
+
+        if isinstance(node, ast.UnaryOp):
+            value = self.convert(node.operand)
+
+            if isinstance(node.op, ast.UAdd):
+                return value
+
+            if isinstance(node.op, ast.USub):
+                return -value
+
+            raise ParseError("РќРµРїРѕРґРґРµСЂР¶РёРІР°РµРјР°СЏ СѓРЅР°СЂРЅР°СЏ РѕРїРµСЂР°С†РёСЏ")
+
+        if isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name):
+                raise ParseError("Р”РѕРїСѓСЃРєР°СЋС‚СЃСЏ С‚РѕР»СЊРєРѕ РїСЂСЏРјС‹Рµ РІС‹Р·РѕРІС‹ С„СѓРЅРєС†РёР№")
+
+            name = node.func.id
+
+            # РЎРїРµС†РёР°Р»СЊРЅС‹Рµ РѕРїРµСЂР°С†РёРё РјР°С‚РµРјР°С‚РёС‡РµСЃРєРѕРіРѕ Р°РЅР°Р»РёР·Р°.
+            # РћР±СЂР°Р±Р°С‚С‹РІР°РµРј AST РЅРµРїРѕСЃСЂРµРґСЃС‚РІРµРЅРЅРѕ, С‡С‚РѕР±С‹ РїРµСЂРµРјРµРЅРЅР°СЏ
+            # РёРЅС‚РµРіСЂРёСЂРѕРІР°РЅРёСЏ РЅРµ РїСЂРµРІСЂР°С‰Р°Р»Р°СЃСЊ РІ РѕР±С‹С‡РЅРѕРµ РІС‹СЂР°Р¶РµРЅРёРµ.
+
+            if name == "derivative":
+                if len(node.args) not in (2, 3) or node.keywords:
+                    raise ParseError(
+                        "РЎРёРЅС‚Р°РєСЃРёСЃ: derivative(f(x), x, order)"
+                    )
+
+                expression = self.convert(node.args[0])
+                variable_node = node.args[1]
+
+                if not isinstance(variable_node, ast.Name):
+                    raise ParseError("РџРµСЂРµРјРµРЅРЅР°СЏ РїСЂРѕРёР·РІРѕРґРЅРѕР№ РґРѕР»Р¶РЅР° Р±С‹С‚СЊ РёРјРµРЅРµРј")
+
+                order = (
+                    self.convert(node.args[2])
+                    if len(node.args) == 3
+                    else 1
+                )
+
+                return differentiate(
+                    expression,
+                    sp.Symbol(variable_node.id),
+                    order,
+                )
+
+            if name == "integral":
+                if node.keywords or len(node.args) not in (2, 4):
+                    raise ParseError(
+                        "РЎРёРЅС‚Р°РєСЃРёСЃ: integral(f(x), x) "
+                        "РёР»Рё integral(f(x), x, a, b)"
+                    )
+
+                expression = self.convert(node.args[0])
+                variable_node = node.args[1]
+
+                if not isinstance(variable_node, ast.Name):
+                    raise ParseError("РџРµСЂРµРјРµРЅРЅР°СЏ РёРЅС‚РµРіСЂРёСЂРѕРІР°РЅРёСЏ РґРѕР»Р¶РЅР° Р±С‹С‚СЊ РёРјРµРЅРµРј")
+
+                variable = sp.Symbol(variable_node.id)
+
+                if len(node.args) == 2:
+                    return integrate(expression, variable)
+
+                lower = self.convert(node.args[2])
+                upper = self.convert(node.args[3])
+
+                return integrate(expression, variable, lower, upper)
+
+            if name == "cumulative":
+                if len(node.args) != 3 or node.keywords:
+                    raise ParseError(
+                        "РЎРёРЅС‚Р°РєСЃРёСЃ: cumulative(f(x), x, start)"
+                    )
+
+                expression = self.convert(node.args[0])
+                variable_node = node.args[1]
+
+                if not isinstance(variable_node, ast.Name):
+                    raise ParseError("РџРµСЂРµРјРµРЅРЅР°СЏ РёРЅС‚РµРіСЂРёСЂРѕРІР°РЅРёСЏ РґРѕР»Р¶РЅР° Р±С‹С‚СЊ РёРјРµРЅРµРј")
+
+                start = self.convert(node.args[2])
+
+                return cumulative_integral(
+                    expression,
+                    sp.Symbol(variable_node.id),
+                    start,
+                )
+
+            # РћР±С‹С‡РЅС‹Рµ Р°СЂРіСѓРјРµРЅС‚С‹ С„СѓРЅРєС†РёР№.
+            args = [self.convert(arg) for arg in node.args]
+
+            if name in BUILTIN_FUNCTIONS:
+                if node.keywords:
+                    raise ParseError("РРјРµРЅРѕРІР°РЅРЅС‹Рµ Р°СЂРіСѓРјРµРЅС‚С‹ РЅРµ РїРѕРґРґРµСЂР¶РёРІР°СЋС‚СЃСЏ")
+
+                try:
+                    return BUILTIN_FUNCTIONS[name](*args)
+                except TypeError as exc:
+                    raise ParseError(str(exc)) from exc
+
+            if name in self.functions:
+                return self._call_user_function(
+                    self.functions[name],
+                    args,
+                    node.keywords,
+                )
+
+            raise UnknownNameError(f"РќРµРёР·РІРµСЃС‚РЅР°СЏ С„СѓРЅРєС†РёСЏ: {name}")
+
+        raise ParseError(
+            f"РќРµРїРѕРґРґРµСЂР¶РёРІР°РµРјР°СЏ РєРѕРЅСЃС‚СЂСѓРєС†РёСЏ: {type(node).__name__}"
+        )
+
+
+    def _call_user_function(self, definition, args, keywords):
+        values = {}
+
+        if len(args) > len(definition.arguments):
+            raise ParseError(
+                f"Р¤СѓРЅРєС†РёСЏ {definition.name}: СЃР»РёС€РєРѕРј РјРЅРѕРіРѕ Р°СЂРіСѓРјРµРЅС‚РѕРІ"
+            )
+
+        for name, value in zip(definition.arguments, args):
+            values[name] = value
+
+        for keyword in keywords:
+            if keyword.arg not in definition.arguments:
+                raise ParseError(
+                    f"РќРµРёР·РІРµСЃС‚РЅС‹Р№ Р°СЂРіСѓРјРµРЅС‚: {keyword.arg}"
+                )
+
+            if keyword.arg in values:
+                raise ParseError(
+                    f"РђСЂРіСѓРјРµРЅС‚ {keyword.arg} РїРµСЂРµРґР°РЅ РґРІР°Р¶РґС‹"
+                )
+
+            values[keyword.arg] = self.convert(keyword.value)
+
+        for name, default in definition.defaults.items():
+            values.setdefault(name, default)
+
+        missing = [
+            name for name in definition.arguments
+            if name not in values
+        ]
+
+        if missing:
+            raise ParseError(
+                f"РќРµ РїРµСЂРµРґР°РЅС‹ Р°СЂРіСѓРјРµРЅС‚С‹: {', '.join(missing)}"
+            )
+
+        symbols = {
+            name: sp.Symbol(name)
+            for name in definition.arguments
+        }
+
+        substitutions = {
+            symbols[name]: value
+            for name, value in values.items()
+        }
+
+        return definition.expression.subs(substitutions)
+
+========== core\variables.py ==========
+class VariableStore:
+    def __init__(self):
+        self._values = {}
+
+    def set(self, name, value):
+        self._values[name] = value
+
+    def get(self, name):
+        return self._values[name]
+
+    def has(self, name):
+        return name in self._values
+
+    def remove(self, name):
+        self._values.pop(name, None)
+
+    def clear(self):
+        self._values.clear()
+
+    def names(self):
+        return tuple(self._values.keys())
+
+    def as_dict(self):
+        return dict(self._values)
+
+    def update(self, values):
+        self._values.update(values)
+
+    def __contains__(self, name):
+        return self.has(name)
+
+    def __getitem__(self, name):
+        return self.get(name)
+
+    def __len__(self):
+        return len(self._values)
+
+========== core\errors.py ==========
+class MathLabError(Exception):
+    """Р‘Р°Р·РѕРІР°СЏ РѕС€РёР±РєР° MathLab."""
+
+
+class ParseError(MathLabError):
+    """РћС€РёР±РєР° СЃРёРЅС‚Р°РєСЃРёСЃР° РІС‹СЂР°Р¶РµРЅРёСЏ."""
+
+
+class EvaluationError(MathLabError):
+    """РћС€РёР±РєР° РІС‹С‡РёСЃР»РµРЅРёСЏ."""
+
+
+class DependencyError(MathLabError):
+    """РћС€РёР±РєР° Р·Р°РІРёСЃРёРјРѕСЃС‚РµР№ РјРµР¶РґСѓ РІС‹СЂР°Р¶РµРЅРёСЏРјРё."""
+
+
+class UnknownNameError(ParseError):
+    """РќРµРёР·РІРµСЃС‚РЅР°СЏ С„СѓРЅРєС†РёСЏ РёР»Рё РЅРµРєРѕСЂСЂРµРєС‚РЅРѕРµ РѕР±СЂР°С‰РµРЅРёРµ Рє РёРјРµРЅРё."""
+
+
+class DimensionError(MathLabError):
+    """РћС€РёР±РєР° С„РёР·РёС‡РµСЃРєРѕР№ СЂР°Р·РјРµСЂРЅРѕСЃС‚Рё."""
+
+========== units\dimensions.py ==========
+
+from dataclasses import dataclass
+from fractions import Fraction
+from collections.abc import Mapping
+
+
+BASE_DIMENSIONS = (
+    "L",  # Length
+    "M",  # Mass
+    "T",  # Time
+    "I",  # Electric current
+    "О",  # Thermodynamic temperature
+    "N",  # Amount of substance
+    "J",  # Luminous intensity
+)
+
+DIMENSION_COUNT = len(BASE_DIMENSIONS)
+
+
+@dataclass(frozen=True)
+class Dimension:
+    """
+    Physical dimension represented by seven rational exponents.
+
+    Exponent order:
+        L, M, T, I, О, N, J
+    """
+
+    exponents: tuple[Fraction, ...] = (
+        Fraction(0),
+        Fraction(0),
+        Fraction(0),
+        Fraction(0),
+        Fraction(0),
+        Fraction(0),
+        Fraction(0),
+    )
+
+    def __post_init__(self):
+        if len(self.exponents) != DIMENSION_COUNT:
+            raise ValueError(
+                f"Expected {DIMENSION_COUNT} exponents"
+            )
+
+        normalized = tuple(
+            Fraction(value)
+            for value in self.exponents
+        )
+
+        object.__setattr__(self, "exponents", normalized)
+
+    @classmethod
+    def base(cls, name: str):
+        """Create one of the seven base dimensions."""
+        try:
+            index = BASE_DIMENSIONS.index(name)
+        except ValueError:
+            raise ValueError(
+                f"Unknown base dimension: {name}"
+            ) from None
+
+        values = [Fraction(0)] * DIMENSION_COUNT
+        values[index] = Fraction(1)
+
+        return cls(tuple(values))
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, int | float | Fraction]):
+        """Create a dimension from a mapping such as {'L': 1, 'T': -2}."""
+        exponents = [Fraction(0)] * DIMENSION_COUNT
+
+        for name, power in values.items():
+            try:
+                index = BASE_DIMENSIONS.index(name)
+            except ValueError:
+                raise ValueError(
+                    f"Unknown base dimension: {name}"
+                ) from None
+
+            exponents[index] = Fraction(power)
+
+        return cls(tuple(exponents))
+
+    @property
+    def is_dimensionless(self) -> bool:
+        return all(power == 0 for power in self.exponents)
+
+    def __mul__(self, other):
+        if not isinstance(other, Dimension):
+            return NotImplemented
+
+        return Dimension(tuple(
+            a + b
+            for a, b in zip(self.exponents, other.exponents)
+        ))
+
+    def __truediv__(self, other):
+        if not isinstance(other, Dimension):
+            return NotImplemented
+
+        return Dimension(tuple(
+            a - b
+            for a, b in zip(self.exponents, other.exponents)
+        ))
+
+    def __pow__(self, power):
+        power = Fraction(power)
+
+        return Dimension(tuple(
+            exponent * power
+            for exponent in self.exponents
+        ))
+
+    def __str__(self):
+        if self.is_dimensionless:
+            return "1"
+
+        parts = []
+
+        for name, power in zip(BASE_DIMENSIONS, self.exponents):
+            if power == 0:
+                continue
+
+            if power == 1:
+                parts.append(name)
+            else:
+                parts.append(f"{name}^{power}")
+
+        return " ".join(parts)
+
+    def __repr__(self):
+        return f"Dimension('{self}')"
+
+
+# Base dimensions
+
+DIMENSIONLESS = Dimension()
+
+LENGTH = Dimension.base("L")
+MASS = Dimension.base("M")
+TIME = Dimension.base("T")
+CURRENT = Dimension.base("I")
+TEMPERATURE = Dimension.base("О")
+AMOUNT = Dimension.base("N")
+LUMINOUS_INTENSITY = Dimension.base("J")
+
+
+# Derived dimensions
+
+AREA = LENGTH ** 2
+VOLUME = LENGTH ** 3
+
+VELOCITY = LENGTH / TIME
+ACCELERATION = LENGTH / TIME ** 2
+
+FREQUENCY = DIMENSIONLESS / TIME
+
+FORCE = MASS * ACCELERATION
+ENERGY = FORCE * LENGTH
+POWER = ENERGY / TIME
+
+PRESSURE = FORCE / AREA
+DENSITY = MASS / VOLUME
+
+CHARGE = CURRENT * TIME
+VOLTAGE = ENERGY / CHARGE
+RESISTANCE = VOLTAGE / CURRENT
+CAPACITANCE = CHARGE / VOLTAGE
+
+MAGNETIC_FIELD = MASS / (CURRENT * TIME ** 2)
+
+
+========== units\quantities.py ==========
+
+from dataclasses import dataclass
+from numbers import Number
+
+import numpy as np
+
+from .dimensions import DIMENSIONLESS, Dimension
+from core.errors import DimensionError
+
+
+@dataclass(frozen=True, eq=False)
+class Quantity:
+    value: object
+    dimension: Dimension = DIMENSIONLESS
+
+    __array_priority__ = 1000
+
+    def __post_init__(self):
+        if not isinstance(self.dimension, Dimension):
+            raise TypeError("dimension must be a Dimension")
+
+    def _check_compatible(self, other):
+        if not isinstance(other, Quantity):
+            raise DimensionError(
+                "РћРїРµСЂР°С†РёСЏ С‚СЂРµР±СѓРµС‚ С„РёР·РёС‡РµСЃРєСѓСЋ РІРµР»РёС‡РёРЅСѓ"
+            )
+
+        if self.dimension != other.dimension:
+            raise DimensionError(
+                f"РќРµСЃРѕРІРјРµСЃС‚РёРјС‹Рµ СЂР°Р·РјРµСЂРЅРѕСЃС‚Рё: "
+                f"{self.dimension} Рё {other.dimension}"
+            )
+
+    def __add__(self, other):
+        self._check_compatible(other)
+
+        return Quantity(
+            self.value + other.value,
+            self.dimension,
+        )
+
+    def __radd__(self, other):
+        return self.__add__(other)
+
+    def __sub__(self, other):
+        self._check_compatible(other)
+
+        return Quantity(
+            self.value - other.value,
+            self.dimension,
+        )
+
+    def __rsub__(self, other):
+        if not isinstance(other, Quantity):
+            return NotImplemented
+
+        return other.__sub__(self)
+
+    def __mul__(self, other):
+        if isinstance(other, Quantity):
+            return Quantity(
+                self.value * other.value,
+                self.dimension * other.dimension,
+            )
+
+        if isinstance(other, Number) or isinstance(other, np.ndarray):
+            return Quantity(
+                self.value * other,
+                self.dimension,
+            )
+
+        return NotImplemented
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __truediv__(self, other):
+        if isinstance(other, Quantity):
+            return Quantity(
+                self.value / other.value,
+                self.dimension / other.dimension,
+            )
+
+        if isinstance(other, Number) or isinstance(other, np.ndarray):
+            return Quantity(
+                self.value / other,
+                self.dimension,
+            )
+
+        return NotImplemented
+
+    def __rtruediv__(self, other):
+        if isinstance(other, Number) or isinstance(other, np.ndarray):
+            return Quantity(
+                other / self.value,
+                DIMENSIONLESS / self.dimension,
+            )
+
+        return NotImplemented
+
+    def __pow__(self, power):
+        if isinstance(power, Quantity):
+            if not power.dimension.is_dimensionless:
+                raise DimensionError(
+                    "РџРѕРєР°Р·Р°С‚РµР»СЊ СЃС‚РµРїРµРЅРё РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ Р±РµР·СЂР°Р·РјРµСЂРЅС‹Рј"
+                )
+            power = power.value
+
+        if not isinstance(power, Number):
+            raise TypeError(
+                "РџРѕРєР°Р·Р°С‚РµР»СЊ СЃС‚РµРїРµРЅРё РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ С‡РёСЃР»РѕРј"
+            )
+
+        return Quantity(
+            self.value ** power,
+            self.dimension ** power,
+        )
+
+    def __neg__(self):
+        return Quantity(
+            -self.value,
+            self.dimension,
+        )
+
+    def __pos__(self):
+        return self
+
+    def __abs__(self):
+        return Quantity(
+            abs(self.value),
+            self.dimension,
+        )
+
+    def __eq__(self, other):
+        if not isinstance(other, Quantity):
+            return False
+
+        if self.dimension != other.dimension:
+            return False
+
+        return bool(np.array_equal(self.value, other.value))
+
+    def __lt__(self, other):
+        self._check_compatible(other)
+        return self.value < other.value
+
+    def __le__(self, other):
+        self._check_compatible(other)
+        return self.value <= other.value
+
+    def __gt__(self, other):
+        self._check_compatible(other)
+        return self.value > other.value
+
+    def __ge__(self, other):
+        self._check_compatible(other)
+        return self.value >= other.value
+
+    @property
+    def is_dimensionless(self):
+        return self.dimension.is_dimensionless
+
+    def __repr__(self):
+        return (
+            f"Quantity(value={self.value!r}, "
+            f"dimension={self.dimension!r})"
+        )
+
+    def __str__(self):
+        return f"{self.value} [{self.dimension}]"
+
+
+========== units\systems.py ==========
+
+from dataclasses import dataclass
+from types import MappingProxyType
+
+from .dimensions import (
+    DIMENSIONLESS,
+    LENGTH,
+    MASS,
+    TIME,
+    CURRENT,
+    TEMPERATURE,
+    AMOUNT,
+    LUMINOUS_INTENSITY,
+    AREA,
+    VOLUME,
+    VELOCITY,
+    ACCELERATION,
+    FREQUENCY,
+    FORCE,
+    ENERGY,
+    POWER,
+    PRESSURE,
+    DENSITY,
+    CHARGE,
+    VOLTAGE,
+    RESISTANCE,
+    CAPACITANCE,
+    MAGNETIC_FIELD,
+)
+
+
+@dataclass(frozen=True)
+class Unit:
+    """
+    Unit definition.
+
+    scale_to_si:
+        Multiplier converting this unit to the corresponding SI unit.
+
+    Example:
+        1 cm = 0.01 m
+    """
+
+    name: str
+    symbol: str
+    dimension: object
+    scale_to_si: float
+    system: str
+
+    def __post_init__(self):
+        if self.scale_to_si <= 0:
+            raise ValueError("Unit scale must be positive")
+
+
+@dataclass(frozen=True)
+class UnitSystem:
+    name: str
+    symbol: str
+    units: object
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "units",
+            MappingProxyType(dict(self.units)),
+        )
+
+    def get_unit(self, name: str) -> Unit:
+        try:
+            return self.units[name]
+        except KeyError:
+            raise KeyError(
+                f"Unit {name!r} is not defined in {self.name}"
+            ) from None
+
+
+def _unit(name, symbol, dimension, scale, system):
+    return Unit(
+        name=name,
+        symbol=symbol,
+        dimension=dimension,
+        scale_to_si=scale,
+        system=system,
+    )
+
+
+# ---------------------------------------------------------------------
+# SI
+# ---------------------------------------------------------------------
+
+SI_UNITS = {
+    "dimensionless": _unit(
+        "dimensionless", "1", DIMENSIONLESS, 1, "SI"
+    ),
+    "meter": _unit("meter", "m", LENGTH, 1, "SI"),
+    "kilogram": _unit("kilogram", "kg", MASS, 1, "SI"),
+    "second": _unit("second", "s", TIME, 1, "SI"),
+    "ampere": _unit("ampere", "A", CURRENT, 1, "SI"),
+    "kelvin": _unit("kelvin", "K", TEMPERATURE, 1, "SI"),
+    "mole": _unit("mole", "mol", AMOUNT, 1, "SI"),
+    "candela": _unit("candela", "cd", LUMINOUS_INTENSITY, 1, "SI"),
+
+    "hertz": _unit("hertz", "Hz", FREQUENCY, 1, "SI"),
+    "newton": _unit("newton", "N", FORCE, 1, "SI"),
+    "joule": _unit("joule", "J", ENERGY, 1, "SI"),
+    "watt": _unit("watt", "W", POWER, 1, "SI"),
+    "pascal": _unit("pascal", "Pa", PRESSURE, 1, "SI"),
+
+    "coulomb": _unit("coulomb", "C", CHARGE, 1, "SI"),
+    "volt": _unit("volt", "V", VOLTAGE, 1, "SI"),
+    "ohm": _unit("ohm", "О©", RESISTANCE, 1, "SI"),
+    "farad": _unit("farad", "F", CAPACITANCE, 1, "SI"),
+    "tesla": _unit("tesla", "T", MAGNETIC_FIELD, 1, "SI"),
+}
+
+
+# ---------------------------------------------------------------------
+# CGS mechanical units
+# ---------------------------------------------------------------------
+
+CGS_MECHANICAL_UNITS = {
+    "centimeter": _unit(
+        "centimeter", "cm", LENGTH, 1e-2, "CGS"
+    ),
+    "gram": _unit(
+        "gram", "g", MASS, 1e-3, "CGS"
+    ),
+    "second": _unit(
+        "second", "s", TIME, 1, "CGS"
+    ),
+    "dyne": _unit(
+        "dyne", "dyn", FORCE, 1e-5, "CGS"
+    ),
+    "erg": _unit(
+        "erg", "erg", ENERGY, 1e-7, "CGS"
+    ),
+    "barye": _unit(
+        "barye", "Ba", PRESSURE, 0.1, "CGS"
+    ),
+    "gal": _unit(
+        "gal", "Gal", ACCELERATION, 1e-2, "CGS"
+    ),
+}
+
+
+# ---------------------------------------------------------------------
+# CGS-ESU: electrostatic system
+# ---------------------------------------------------------------------
+
+CGS_ESU_UNITS = {
+    **CGS_MECHANICAL_UNITS,
+
+    "statcoulomb": _unit(
+        "statcoulomb", "statC", CHARGE,
+        3.3356409519815204e-10, "CGS-ESU"
+    ),
+    "statampere": _unit(
+        "statampere", "statA", CURRENT,
+        3.3356409519815204e-10, "CGS-ESU"
+    ),
+    "statvolt": _unit(
+        "statvolt", "statV", VOLTAGE,
+        299.792458, "CGS-ESU"
+    ),
+    "statohm": _unit(
+        "statohm", "statО©", RESISTANCE,
+        8.987551787368176e11, "CGS-ESU"
+    ),
+}
+
+
+# ---------------------------------------------------------------------
+# CGS-EMU: electromagnetic system
+# ---------------------------------------------------------------------
+
+CGS_EMU_UNITS = {
+    **CGS_MECHANICAL_UNITS,
+
+    "abcoulomb": _unit(
+        "abcoulomb", "abC", CHARGE, 10, "CGS-EMU"
+    ),
+    "abampere": _unit(
+        "abampere", "abA", CURRENT, 10, "CGS-EMU"
+    ),
+    "abvolt": _unit(
+        "abvolt", "abV", VOLTAGE, 1e-8, "CGS-EMU"
+    ),
+    "abohm": _unit(
+        "abohm", "abО©", RESISTANCE, 1e-9, "CGS-EMU"
+    ),
+    "maxwell": _unit(
+        "maxwell", "Mx", MAGNETIC_FIELD * AREA,
+        1e-8, "CGS-EMU"
+    ),
+    "gauss": _unit(
+        "gauss", "G", MAGNETIC_FIELD, 1e-4, "CGS-EMU"
+    ),
+}
+
+
+# ---------------------------------------------------------------------
+# Gaussian system
+# ---------------------------------------------------------------------
+
+GAUSSIAN_UNITS = {
+    **CGS_MECHANICAL_UNITS,
+
+    "statcoulomb": _unit(
+        "statcoulomb", "statC", CHARGE,
+        3.3356409519815204e-10, "Gaussian"
+    ),
+    "statampere": _unit(
+        "statampere", "statA", CURRENT,
+        3.3356409519815204e-10, "Gaussian"
+    ),
+    "statvolt": _unit(
+        "statvolt", "statV", VOLTAGE,
+        299.792458, "Gaussian"
+    ),
+    "gauss": _unit(
+        "gauss", "G", MAGNETIC_FIELD, 1e-4, "Gaussian"
+    ),
+    "maxwell": _unit(
+        "maxwell", "Mx", MAGNETIC_FIELD * AREA,
+        1e-8, "Gaussian"
+    ),
+}
+
+
+SI = UnitSystem("International System of Units", "SI", SI_UNITS)
+
+CGS_ESU = UnitSystem(
+    "Centimeter-Gram-Second Electrostatic System",
+    "CGS-ESU",
+    CGS_ESU_UNITS,
+)
+
+CGS_EMU = UnitSystem(
+    "Centimeter-Gram-Second Electromagnetic System",
+    "CGS-EMU",
+    CGS_EMU_UNITS,
+)
+
+GAUSSIAN = UnitSystem(
+    "Gaussian CGS System",
+    "Gaussian",
+    GAUSSIAN_UNITS,
+)
+
+SYSTEMS = {
+    "SI": SI,
+    "CGS-ESU": CGS_ESU,
+    "CGS-EMU": CGS_EMU,
+    "Gaussian": GAUSSIAN,
+}
+
+
+def get_system(name: str) -> UnitSystem:
+    try:
+        return SYSTEMS[name]
+    except KeyError:
+        raise KeyError(f"Unknown unit system: {name}") from None
+
+
+========== tests\test_engine.py ==========
+import numpy as np
+import pytest
+
+from core import MathEngine
+from core.errors import (
+    EvaluationError,
+    DependencyError,
+)
+
+
+def test_variables():
+    engine = MathEngine()
+
+    engine.set_lines([
+        "a = 2.5",
+        "b = a * 2",
+    ])
+
+    assert engine.get_variable("a") == 2.5
+    assert engine.get_variable("b") == 5.0
+
+
+def test_forward_variable_dependency():
+    engine = MathEngine()
+
+    engine.set_lines([
+        "b = a * 2",
+        "a = 3",
+    ])
+
+    assert engine.get_variable("b") == 6.0
+
+
+def test_user_function():
+    engine = MathEngine()
+
+    engine.set_lines([
+        "a = 2.5",
+        "f(x) = a + x",
+    ])
+
+    assert engine.call("f", 3) == 5.5
+
+
+def test_function_composition():
+    engine = MathEngine()
+
+    engine.set_lines([
+        "a = 2.5",
+        "f(x) = a + x",
+        "g(x) = f(x)^2",
+    ])
+
+    assert engine.call("g", 2) == pytest.approx(20.25)
+
+
+def test_default_arguments():
+    engine = MathEngine()
+
+    engine.set_lines([
+        "f(x, a=2) = a*x",
+    ])
+
+    assert engine.call("f", 3) == 6
+    assert engine.call("f", 3, 5) == 15
+
+
+def test_numpy_arrays():
+    engine = MathEngine()
+
+    engine.set_lines([
+        "f(x) = x^2",
+    ])
+
+    values = engine.call(
+        "f",
+        np.array([1, 2, 3, 4])
+    )
+
+    assert np.array_equal(
+        values,
+        np.array([1, 4, 9, 16])
+    )
+
+
+def test_math_functions():
+    engine = MathEngine()
+
+    assert engine.evaluate("sin(pi/2)") == pytest.approx(1.0)
+    assert engine.evaluate("sqrt(16)") == pytest.approx(4.0)
+    assert engine.evaluate("ln(e)") == pytest.approx(1.0)
+
+
+def test_cycle_detection():
+    engine = MathEngine()
+
+    with pytest.raises(DependencyError):
+        engine.set_lines([
+            "a = b + 1",
+            "b = a + 1",
+        ])
+
+
+def test_unknown_variable():
+    engine = MathEngine()
+
+    with pytest.raises(EvaluationError):
+        engine.set_lines([
+            "a = unknown + 1",
+        ])
+
+
+def test_update_line():
+    engine = MathEngine()
+
+    engine.set_lines([
+        "a = 2",
+        "b = a + 1",
+    ])
+
+    engine.update_line(0, "a = 10")
+
+    assert engine.get_variable("b") == 11
+
+
+def test_remove_line():
+    engine = MathEngine()
+
+    engine.set_lines([
+        "a = 2",
+        "b = 3",
+    ])
+
+    engine.remove_line(0)
+
+    assert engine.get_variable("b") == 3
+    assert engine.get_variable_names() == ("b",)

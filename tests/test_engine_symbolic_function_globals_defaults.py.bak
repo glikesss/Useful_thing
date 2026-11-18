@@ -1,0 +1,69 @@
+﻿import sympy as sp
+import pytest
+
+from core import MathEngine
+from core.errors import DimensionError
+from units.dimensions import LENGTH, TIME
+from units.quantities import SymbolicQuantity
+
+
+def test_symbolic_function_uses_global_symbolic_variable():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("a", "a", LENGTH)
+    engine.lines = [
+        "f(x) = x + a",
+        "g(x) = f(x)**2",
+    ]
+    engine._rebuild()
+
+    result = engine.call("g", engine.variables.get("x"))
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH**2
+    assert result.expression == (sp.Symbol("x") + sp.Symbol("a"))**2
+
+
+def test_symbolic_function_default_argument():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x) = x**2",
+        "g(x, k=2) = k*f(x) + x**2",
+    ]
+    engine._rebuild()
+
+    result = engine.call("g", engine.variables.get("x"))
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH**2
+    assert result.expression == 3 * sp.Symbol("x")**2
+
+
+def test_symbolic_function_default_argument_can_be_overridden():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.lines = [
+        "f(x) = x**2",
+        "g(x, k=2) = k*f(x) + x**2",
+    ]
+    engine._rebuild()
+
+    result = engine.call("g", engine.variables.get("x"), 4)
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.dimension == LENGTH**2
+    assert result.expression == 5 * sp.Symbol("x")**2
+
+
+def test_symbolic_function_rejects_incompatible_global_variable():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.set_symbolic_variable("a", "a", TIME)
+    engine.lines = [
+        "f(x) = x + a",
+    ]
+    engine._rebuild()
+
+    with pytest.raises(DimensionError):
+        engine.call("f", engine.variables.get("x"))

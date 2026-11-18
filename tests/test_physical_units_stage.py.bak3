@@ -1,0 +1,577 @@
+
+import numpy as np
+import pytest
+import sympy as sp
+
+from core import MathEngine
+from core.errors import DimensionError, EvaluationError
+
+from units.dimensions import (
+    DIMENSIONLESS, LENGTH, MASS, TIME, CURRENT,
+    AREA, VOLUME, VELOCITY, ACCELERATION, FORCE, ENERGY,
+    Dimension,
+)
+
+from units.quantities import Quantity, SymbolicQuantity
+from units.expression import QuantityExpressionEvaluator
+from units.registry import get_unit, is_unit
+from units.systems import SI, CGS_ESU, CGS_EMU, GAUSSIAN
+from units.conversion import convert_value, convert_quantity
+from units.constants import (
+    C, E_CHARGE, H, HBAR, K_B, N_A, G,
+    EPSILON_0, MU_0, CONSTANTS, get_constant,
+)
+
+
+# ============================================================
+# DIMENSION ALGEBRA
+# ============================================================
+
+def test_dimension_fraction_is_exact():
+    result = LENGTH ** 0.5
+    assert result.exponents[0] == sp.Rational(1, 2)
+
+
+def test_dimension_negative_power():
+    assert (LENGTH ** -1) * LENGTH == DIMENSIONLESS
+
+
+def test_dimension_zero_power():
+    assert LENGTH ** 0 == DIMENSIONLESS
+
+
+def test_dimension_compound_fractional_power():
+    result = (LENGTH ** 2 / TIME ** 2) ** 0.5
+    assert result == VELOCITY
+
+
+def test_dimension_inverse():
+    assert DIMENSIONLESS / TIME == TIME ** -1
+
+
+def test_dimension_from_mapping():
+    result = Dimension.from_mapping({"L": 2, "T": -1})
+    assert result == AREA / TIME
+
+
+def test_dimension_from_mapping_unknown_key():
+    with pytest.raises(ValueError):
+        Dimension.from_mapping({"X": 1})
+
+
+def test_dimension_rejects_wrong_exponent_count():
+    with pytest.raises(ValueError):
+        Dimension((1, 2))
+
+
+def test_dimension_derived_relations():
+    assert FORCE == MASS * ACCELERATION
+    assert ENERGY == FORCE * LENGTH
+    assert VOLUME == LENGTH ** 3
+
+
+# ============================================================
+# NUMERIC QUANTITY
+# ============================================================
+
+def test_quantity_addition():
+    result = Quantity(2, LENGTH) + Quantity(3, LENGTH)
+    assert result.value == 5
+    assert result.dimension == LENGTH
+
+
+def test_quantity_subtraction():
+    result = Quantity(5, LENGTH) - Quantity(2, LENGTH)
+    assert result.value == 3
+    assert result.dimension == LENGTH
+
+
+def test_quantity_addition_dimension_mismatch():
+    with pytest.raises(DimensionError):
+        Quantity(2, LENGTH) + Quantity(3, TIME)
+
+
+def test_quantity_scalar_addition_rejected():
+    with pytest.raises(DimensionError):
+        Quantity(2, LENGTH) + 3
+
+
+def test_quantity_multiplication():
+    result = Quantity(2, LENGTH) * Quantity(3, TIME)
+    assert result.value == 6
+    assert result.dimension == LENGTH * TIME
+
+
+def test_quantity_scalar_multiplication():
+    result = 3 * Quantity(2, LENGTH)
+    assert result.value == 6
+    assert result.dimension == LENGTH
+
+
+def test_quantity_division():
+    result = Quantity(6, LENGTH) / Quantity(2, TIME)
+    assert result.value == 3
+    assert result.dimension == LENGTH / TIME
+
+
+def test_quantity_scalar_division():
+    result = Quantity(6, LENGTH) / 2
+    assert result.value == 3
+    assert result.dimension == LENGTH
+
+
+def test_quantity_power():
+    result = Quantity(3, LENGTH) ** 2
+    assert result.value == 9
+    assert result.dimension == AREA
+
+
+def test_quantity_fractional_power():
+    result = Quantity(9, AREA) ** 0.5
+    assert result.value == pytest.approx(3)
+    assert result.dimension == LENGTH
+
+
+def test_quantity_dimensioned_exponent_rejected():
+    with pytest.raises(DimensionError):
+        Quantity(2, LENGTH) ** Quantity(2, TIME)
+
+
+def test_quantity_array_arithmetic():
+    result = Quantity(np.array([1, 2, 3]), LENGTH) * 2
+    assert np.allclose(result.value, [2, 4, 6])
+    assert result.dimension == LENGTH
+
+
+def test_quantity_array_equality():
+    a = Quantity(np.array([1, 2]), LENGTH)
+    b = Quantity(np.array([1, 2]), LENGTH)
+    assert a == b
+
+
+def test_quantity_comparison_dimension_mismatch():
+    with pytest.raises(DimensionError):
+        Quantity(1, LENGTH) < Quantity(2, TIME)
+
+
+def test_quantity_absolute_value():
+    result = abs(Quantity(-3, LENGTH))
+    assert result.value == 3
+    assert result.dimension == LENGTH
+
+
+# ============================================================
+# SYMBOLIC QUANTITY
+# ============================================================
+
+def test_symbolic_fractional_power():
+    x = sp.Symbol("x")
+    quantity = SymbolicQuantity(
+        x,
+        LENGTH ** 2,
+        {x: LENGTH ** 2},
+    )
+
+    result = quantity ** sp.Rational(1, 2)
+
+    assert result.expression == sp.sqrt(x)
+    assert result.dimension == LENGTH
+
+
+def test_symbolic_negative_power():
+    x = sp.Symbol("x")
+    quantity = SymbolicQuantity(x, LENGTH, {x: LENGTH})
+
+    result = quantity ** -1
+
+    assert result.dimension == LENGTH ** -1
+
+
+def test_symbolic_unknown_symbol_rejected():
+    x, y = sp.symbols("x y")
+
+    with pytest.raises(DimensionError):
+        SymbolicQuantity(x + y, symbol_dimensions={x: LENGTH})
+
+
+def test_symbolic_dimension_mismatch_in_addition():
+    x, t = sp.symbols("x t")
+
+    a = SymbolicQuantity(x, LENGTH, {x: LENGTH})
+    b = SymbolicQuantity(t, TIME, {t: TIME})
+
+    with pytest.raises(DimensionError):
+        a + b
+
+
+def test_symbolic_function_abs_preserves_dimension():
+    x = sp.Symbol("x")
+    quantity = SymbolicQuantity(x, LENGTH, {x: LENGTH})
+
+    result = abs(quantity)
+
+    assert result.dimension == LENGTH
+    assert result.expression == sp.Abs(x)
+
+
+def test_symbolic_sqrt_of_squared_dimension():
+    x = sp.Symbol("x")
+
+    result = SymbolicQuantity(
+        sp.sqrt(x),
+        symbol_dimensions={x: AREA},
+    )
+
+    assert result.dimension == LENGTH
+
+
+def test_symbolic_differentiation_changes_dimension():
+    x = sp.Symbol("x")
+    quantity = SymbolicQuantity(
+        x ** 3,
+        symbol_dimensions={x: LENGTH},
+    )
+
+    result = quantity.diff(x)
+
+    assert result.dimension == AREA
+
+
+def test_symbolic_integration_changes_dimension():
+    t = sp.Symbol("t")
+    quantity = SymbolicQuantity(
+        t,
+        LENGTH,
+        {t: TIME},
+    )
+
+    result = quantity.integrate(t)
+
+    assert result.dimension == LENGTH * TIME
+
+
+def test_symbolic_dimension_mapping_is_immutable():
+    x = sp.Symbol("x")
+    quantity = SymbolicQuantity(x, LENGTH, {x: LENGTH})
+
+    with pytest.raises(TypeError):
+        quantity.symbol_dimensions[x] = TIME
+
+
+# ============================================================
+# QUANTITY EXPRESSION EVALUATOR
+# ============================================================
+
+def test_evaluator_length_conversion():
+    result = QuantityExpressionEvaluator().evaluate("100 * cm")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(1)
+    assert result.dimension == LENGTH
+
+
+def test_evaluator_compound_unit():
+    result = QuantityExpressionEvaluator().evaluate("9.81 * m / s**2")
+
+    assert result.value == pytest.approx(9.81)
+    assert result.dimension == ACCELERATION
+
+
+def test_evaluator_dimensioned_sqrt():
+    result = QuantityExpressionEvaluator().evaluate("sqrt(9 * m**2)")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(3)
+    assert result.dimension == LENGTH
+
+
+def test_evaluator_dimensioned_abs():
+    result = QuantityExpressionEvaluator().evaluate("abs(-3 * m)")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(3)
+    assert result.dimension == LENGTH
+
+
+def test_evaluator_trigonometry():
+    result = QuantityExpressionEvaluator().evaluate("sin(pi / 2)")
+    assert result == pytest.approx(1)
+
+
+def test_evaluator_rejects_dimensioned_trigonometry():
+    with pytest.raises(ValueError):
+        QuantityExpressionEvaluator().evaluate("sin(2 * m)")
+
+
+def test_evaluator_rejects_unknown_name():
+    with pytest.raises(ValueError):
+        QuantityExpressionEvaluator().evaluate("unknown_variable + 1")
+
+
+def test_evaluator_array_variable():
+    evaluator = QuantityExpressionEvaluator({
+        "x": np.array([1, 2, 3]),
+    })
+
+    result = evaluator.evaluate("2 * x")
+    assert np.allclose(result, [2, 4, 6])
+
+
+# ============================================================
+# UNIT CONVERSION
+# ============================================================
+
+def test_convert_centimeters_to_meters():
+    result = convert_value(100, get_unit("cm"), get_unit("m"))
+    assert result == pytest.approx(1)
+
+
+def test_convert_grams_to_kilograms():
+    result = convert_value(1000, get_unit("g"), get_unit("kg"))
+    assert result == pytest.approx(1)
+
+
+def test_convert_dyne_to_newton():
+    result = convert_value(100000, get_unit("dyn"), get_unit("N"))
+    assert result == pytest.approx(1)
+
+
+def test_convert_erg_to_joule():
+    result = convert_value(1e7, get_unit("erg"), get_unit("J"))
+    assert result == pytest.approx(1)
+
+
+def test_convert_statcoulomb_to_coulomb():
+    result = convert_value(1, get_unit("statC"), get_unit("C"))
+    assert result == pytest.approx(3.3356409519815204e-10)
+
+
+def test_convert_abcoulomb_to_coulomb():
+    result = convert_value(1, get_unit("abC"), get_unit("C"))
+    assert result == pytest.approx(10)
+
+
+def test_convert_gauss_to_tesla():
+    result = convert_value(10000, get_unit("gauss"), get_unit("T"))
+    assert result == pytest.approx(1)
+
+
+def test_convert_array():
+    result = convert_value(
+        np.array([100, 200, 300]),
+        get_unit("cm"),
+        get_unit("m"),
+    )
+
+    assert np.allclose(result, [1, 2, 3])
+
+
+def test_convert_quantity():
+    source = get_unit("cm")
+    target = get_unit("m")
+
+    result = convert_quantity(
+        Quantity(100, LENGTH),
+        source,
+        target,
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(1)
+    assert result.dimension == LENGTH
+
+
+def test_convert_incompatible_units_rejected():
+    with pytest.raises(DimensionError):
+        convert_value(1, get_unit("m"), get_unit("s"))
+
+
+def test_convert_quantity_incompatible_dimension_rejected():
+    with pytest.raises(DimensionError):
+        convert_quantity(
+            Quantity(1, TIME),
+            get_unit("m"),
+            get_unit("cm"),
+        )
+
+
+def test_unknown_unit():
+    assert not is_unit("unknown_unit")
+
+    with pytest.raises(KeyError):
+        get_unit("unknown_unit")
+
+
+# ============================================================
+# UNIT SYSTEMS
+# ============================================================
+
+def test_all_unit_systems_exist():
+    assert SI.symbol == "SI"
+    assert CGS_ESU.symbol == "CGS-ESU"
+    assert CGS_EMU.symbol == "CGS-EMU"
+    assert GAUSSIAN.symbol == "Gaussian"
+
+
+def test_unit_system_mapping_is_immutable():
+    with pytest.raises(TypeError):
+        SI.units["new_unit"] = get_unit("m")
+
+
+def test_unit_scale_must_be_positive():
+    from units.systems import Unit
+
+    with pytest.raises(ValueError):
+        Unit("bad", "bad", LENGTH, 0, "test")
+
+
+# ============================================================
+# PHYSICAL CONSTANTS
+# ============================================================
+
+@pytest.mark.parametrize(
+    "constant, dimension",
+    [
+        (C, VELOCITY),
+        (E_CHARGE, Dimension.from_mapping({"I": 1, "T": 1})),
+        (H, ENERGY * TIME),
+        (HBAR, ENERGY * TIME),
+        (K_B, ENERGY / TEMPERATURE),
+        (G, LENGTH**3 / (MASS * TIME**2)),
+        (EPSILON_0, E_CHARGE.dimension**2 / (FORCE * LENGTH**2)),
+        (MU_0, FORCE / CURRENT**2),
+    ],
+)
+def test_constant_dimensions(constant, dimension):
+    assert constant.dimension == dimension
+
+
+def test_constant_registry_lookup():
+    assert get_constant("c") is C
+    assert get_constant("h") is H
+    assert get_constant("G") is G
+
+
+def test_constant_registry_is_immutable():
+    with pytest.raises(TypeError):
+        CONSTANTS["new_constant"] = C
+
+
+def test_unknown_constant():
+    with pytest.raises(KeyError):
+        get_constant("unknown_constant")
+
+
+# ============================================================
+# MATH ENGINE INTEGRATION
+# ============================================================
+
+def test_engine_quantity_expression():
+    engine = MathEngine()
+    engine.set_lines(["length = 5 * m"])
+
+    result = engine.evaluate("length / (2 * s)")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(2.5)
+    assert result.dimension == VELOCITY
+
+
+def test_engine_dimensioned_sqrt():
+    engine = MathEngine()
+    engine.set_lines(["area = 9 * m**2"])
+
+    result = engine.evaluate("sqrt(area)")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(3)
+    assert result.dimension == LENGTH
+
+
+def test_engine_rejects_incompatible_addition():
+    engine = MathEngine()
+    engine.set_lines([
+        "length = 3 * m",
+        "duration = 2 * s",
+    ])
+
+    with pytest.raises(DimensionError):
+        engine.evaluate("length + duration")
+
+
+def test_engine_quantity_function():
+    engine = MathEngine()
+    engine.set_lines(["square(x) = x**2"])
+
+    result = engine.call("square", Quantity(3, LENGTH))
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(9)
+    assert result.dimension == AREA
+
+
+def test_engine_quantity_function_rejects_bad_addition():
+    engine = MathEngine()
+    engine.set_lines(["bad(x, t) = x + t"])
+
+    with pytest.raises(DimensionError):
+        engine.call(
+            "bad",
+            Quantity(2, LENGTH),
+            Quantity(3, TIME),
+        )
+
+
+def test_engine_quantity_integral():
+    engine = MathEngine()
+
+    result = engine.integrate(
+        "3 * m / s",
+        variable="t",
+        lower=Quantity(0, TIME),
+        upper=Quantity(2, TIME),
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(6)
+    assert result.dimension == LENGTH
+
+
+def test_engine_quantity_derivative():
+    engine = MathEngine()
+    engine.set_lines(["x = 5 * m"])
+
+    result = engine.differentiate("x**2", "x")
+
+    assert isinstance(result, Quantity)
+    assert result.value == pytest.approx(10)
+    assert result.dimension == LENGTH
+
+
+def test_engine_state_survives_dimension_error():
+    engine = MathEngine()
+    engine.set_lines([
+        "length = 3 * m",
+        "area = length**2",
+    ])
+
+    with pytest.raises(DimensionError):
+        engine.evaluate("length + 2 * s")
+
+    assert engine.get_variable("length").value == pytest.approx(3)
+    assert engine.get_variable("area").value == pytest.approx(9)
+
+
+def test_engine_rebuild_preserves_quantity_results():
+    engine = MathEngine()
+    engine.set_lines([
+        "length = 3 * m",
+        "area = length**2",
+    ])
+
+    before = engine.get_variable("area")
+    engine._rebuild()
+    after = engine.get_variable("area")
+
+    assert before == after
+    assert after.dimension == AREA
