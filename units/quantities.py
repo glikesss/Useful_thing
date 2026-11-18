@@ -328,6 +328,22 @@ class SymbolicQuantity:
 
         return result
 
+    @staticmethod
+    def _coerce_additive_scalar(value):
+        try:
+            expression = sp.sympify(value)
+        except (TypeError, ValueError, sp.SympifyError):
+            raise DimensionError(
+                "Addition and subtraction require compatible dimensions"
+            ) from None
+
+        if not expression.is_number:
+            raise DimensionError(
+                "Only numeric scalars can be added to SymbolicQuantity"
+            )
+
+        return SymbolicQuantity(expression, DIMENSIONLESS)
+
     def _check_compatible(self, other):
         if not isinstance(other, SymbolicQuantity):
             raise DimensionError(
@@ -341,6 +357,9 @@ class SymbolicQuantity:
             )
 
     def __add__(self, other):
+        if not isinstance(other, SymbolicQuantity):
+            other = self._coerce_additive_scalar(other)
+
         self._check_compatible(other)
 
         dimensions = self._merge_dimensions(
@@ -355,12 +374,12 @@ class SymbolicQuantity:
         )
 
     def __radd__(self, other):
-        if other == 0:
-            return self
-
         return self.__add__(other)
 
     def __sub__(self, other):
+        if not isinstance(other, SymbolicQuantity):
+            other = self._coerce_additive_scalar(other)
+
         self._check_compatible(other)
 
         dimensions = self._merge_dimensions(
@@ -375,10 +394,10 @@ class SymbolicQuantity:
         )
 
     def __rsub__(self, other):
-        if isinstance(other, SymbolicQuantity):
-            return other.__sub__(self)
+        if not isinstance(other, SymbolicQuantity):
+            other = self._coerce_additive_scalar(other)
 
-        return NotImplemented
+        return other.__sub__(self)
 
     def __mul__(self, other):
         if isinstance(other, SymbolicQuantity):
