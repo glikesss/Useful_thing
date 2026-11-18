@@ -423,8 +423,53 @@ class MathLabBridge:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def select_export_plot_file(self, title, image_data, file_format):
+        """Save the currently displayed plot image as PNG or PDF."""
+        try:
+            if not isinstance(image_data, str) or not image_data.startswith("data:image/png;base64,"):
+                raise ValueError("Сначала постройте график")
+            formats = {
+                "png": ("PNG image (*.png)", ".png"),
+                "pdf": ("PDF document (*.pdf)", ".pdf"),
+            }
+            if file_format not in formats:
+                raise ValueError("Неподдерживаемый формат экспорта графика")
+            if self._window is None:
+                raise RuntimeError("Окно приложения ещё не создано")
+            import webview
+            dialog_type = webview.FileDialog.SAVE if hasattr(webview, "FileDialog") else webview.SAVE_DIALOG
+            file_type, extension = formats[file_format]
+            safe_title = (str(title or "График").strip() or "График")
+            selected = self._window.create_file_dialog(
+                dialog_type,
+                save_filename=f"{safe_title}{extension}",
+                file_types=(file_type,),
+            )
+            if not selected:
+                return {"ok": False, "cancelled": True}
+            selected_path = selected if isinstance(selected, (str, Path)) else selected[0]
+            path = Path(selected_path)
+            if path.suffix.lower() != extension:
+                path = path.with_suffix(extension)
+            image_bytes = base64.b64decode(image_data.split(",", 1)[1], validate=True)
+            if file_format == "png":
+                path.write_bytes(image_bytes)
+            else:
+                import matplotlib.pyplot as plt
+                from PIL import Image
+                image = Image.open(BytesIO(image_bytes)).convert("RGB")
+                figure, axis = plt.subplots(figsize=(image.width / 140, image.height / 140))
+                axis.imshow(image)
+                axis.axis("off")
+                figure.subplots_adjust(0, 0, 1, 1)
+                figure.savefig(path, format="pdf", bbox_inches="tight", pad_inches=0)
+                plt.close(figure)
+            return {"ok": True, "path": str(path), "message": f"График сохранён: {path.name}"}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     def select_export_table_file(self, name, file_format):
-        """Open a native save dialog for PNG, PDF, or Excel export."""
+        """Open a native save dialog for Excel export."""
         try:
             if self._window is None:
                 raise RuntimeError("Окно приложения ещё не создано")
