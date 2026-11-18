@@ -140,6 +140,52 @@ pre { margin: 0; color: #9fe0bd; font: 13px/1.65 Consolas, monospace; white-spac
 }
 .dataset-remove:hover { background: #304762; }
 .plot-panel, .table-panel { grid-column: 1 / -1; }
+.plot-tabs-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0 4px;
+    min-width: 0;
+}
+.plot-tabs {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    overflow-x: auto;
+    padding: 3px 2px 7px;
+}
+.plot-tab {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 3px;
+    padding: 3px 5px 3px 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: 9px;
+    background: rgba(16, 29, 47, .78);
+}
+.plot-tab.active {
+    border-color: rgba(105, 151, 238, .72);
+    background: rgba(57, 104, 174, .2);
+    box-shadow: 0 3px 12px rgba(37, 91, 171, .12);
+}
+.plot-tab-select, .plot-tab-close {
+    border: 0;
+    color: #aebfd6;
+    background: transparent;
+    cursor: pointer;
+}
+.plot-tab-select { padding: 5px 4px; font-size: 11px; }
+.plot-tab.active .plot-tab-select { color: #edf4ff; font-weight: 700; }
+.plot-tab-close { width: 22px; height: 22px; border-radius: 6px; font-size: 16px; }
+.plot-tab-close:hover { color: #ffaaaa; background: rgba(255, 100, 100, .12); }
+.plot-new-tab { min-height: 32px; padding: 0 10px; font-size: 11px; }
+@media (max-width: 620px) {
+    .plot-tabs-bar { align-items: flex-start; flex-direction: column; }
+    .plot-tabs { width: 100%; }
+}
+
 .plot-controls {
     display: grid; grid-template-columns: 1.2fr 1fr 1fr 1.3fr auto;
     gap: 11px; align-items: end; margin: 17px 0;
@@ -213,15 +259,16 @@ footer {
 }
 .formula-row {
     display: grid;
-    grid-template-columns: 25px minmax(180px, 1fr) minmax(130px, .9fr) 30px;
+    grid-template-columns: 25px minmax(0, 1fr) 30px;
+    grid-template-rows: auto auto;
     align-items: center;
-    gap: 9px;
+    gap: 7px 9px;
     min-width: 0;
-    padding: 7px 8px;
+    padding: 9px 10px 7px;
     border: 1px solid var(--border-soft);
-    border-radius: 10px;
-    background: rgba(12, 23, 41, .72);
-    transition: border-color .15s ease, background .15s ease;
+    border-radius: 11px;
+    background: linear-gradient(145deg, rgba(17, 31, 51, .94), rgba(12, 23, 41, .78));
+    transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
 }
 .formula-row:focus-within {
     border-color: rgba(109, 158, 255, .65);
@@ -239,17 +286,24 @@ footer {
     font: 13px Consolas, "Cascadia Code", monospace;
 }
 .formula-row-preview {
+    grid-column: 2 / 3;
+    grid-row: 2;
     min-width: 0;
-    min-height: 38px;
+    min-height: 43px;
     display: flex;
     align-items: center;
     overflow-x: auto;
-    padding: 4px 9px;
-    color: #edf3ff;
-    font-size: 17px;
-    border-left: 1px solid var(--border-soft);
+    padding: 7px 12px;
+    color: #f1f5ff;
+    font-size: 21px;
+    border-top: 1px solid rgba(104, 137, 181, .18);
+    background: rgba(5, 13, 25, .22);
+    border-radius: 7px;
 }
-.formula-row-preview math { color: inherit; }
+.formula-row-preview math { color: inherit; font-size: 1.12em; }
+.formula-row-preview mi, .formula-row-preview mn { color: #eaf1ff; }
+.formula-row-preview mo { color: #9fc0ff; }
+.formula-row-preview mfrac { padding: 0 2px; }
 .formula-preview-pending, .formula-preview-placeholder {
     color: var(--muted-dim);
     font: 10px/1.4 Inter, "Segoe UI", sans-serif;
@@ -279,9 +333,8 @@ footer {
     .formula-row-preview {
         grid-column: 2 / 3;
         grid-row: 2;
-        min-height: 27px;
-        padding: 2px 8px;
-        border-left: 0;
+        min-height: 34px;
+        padding: 4px 8px;
         border-top: 1px solid var(--border-soft);
     }
     .formula-row-remove { grid-column: 3; grid-row: 1; }
