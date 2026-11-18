@@ -367,58 +367,24 @@ class MathLabBridge:
             return {"ok": False, "error": str(exc)}
 
     def export_table(self, name, path, file_format):
-        """Export the complete selected dataset as PNG, PDF, or XLSX."""
+        """Export the selected dataset as an Excel workbook."""
         try:
             if not isinstance(name, str) or not name.strip():
                 raise ValueError("Не выбран набор данных")
             path = Path(path)
             file_format = str(file_format).lower()
+            if file_format != "xlsx":
+                raise ValueError("Таблицу можно экспортировать только в Excel; PNG и PDF предназначены для графиков")
             with self._lock:
                 frame = self.data_manager.get_data(name)
-
-            if file_format == "xlsx":
-                with pd.ExcelWriter(path, engine="openpyxl") as writer:
-                    frame.to_excel(writer, sheet_name="Данные", index=False)
-                    sheet = writer.sheets["Данные"]
-                    sheet.freeze_panes = "A2"
-                    sheet.auto_filter.ref = sheet.dimensions
-                    for column_cells in sheet.columns:
-                        width = max(len(str(cell.value or "")) for cell in column_cells)
-                        sheet.column_dimensions[column_cells[0].column_letter].width = min(width + 2, 40)
-            elif file_format in {"png", "pdf"}:
-                import matplotlib.pyplot as plt
-                from matplotlib.backends.backend_pdf import PdfPages
-
-                columns = [str(column) for column in frame.columns]
-                values = frame.astype(object).where(pd.notna(frame), "").values.tolist()
-                rows_per_page = 35
-                if file_format == "pdf":
-                    with PdfPages(path) as pdf:
-                        for start in range(0, max(len(values), 1), rows_per_page):
-                            chunk = values[start:start + rows_per_page]
-                            fig, ax = plt.subplots(figsize=(max(8, len(columns) * 1.5), max(2.5, (len(chunk) + 1) * 0.38)))
-                            ax.axis("off")
-                            table = ax.table(cellText=chunk, colLabels=columns, loc="center", cellLoc="center")
-                            table.auto_set_font_size(False)
-                            table.set_fontsize(8)
-                            table.scale(1, 1.35)
-                            ax.set_title(f"{name} — строки {start + 1}–{start + len(chunk)}", pad=14)
-                            fig.tight_layout()
-                            pdf.savefig(fig, bbox_inches="tight")
-                            plt.close(fig)
-                else:
-                    fig, ax = plt.subplots(figsize=(max(8, len(columns) * 1.5), max(2.5, (len(values) + 1) * 0.32)))
-                    ax.axis("off")
-                    table = ax.table(cellText=values, colLabels=columns, loc="center", cellLoc="center")
-                    table.auto_set_font_size(False)
-                    table.set_fontsize(8)
-                    table.scale(1, 1.25)
-                    ax.set_title(name, pad=14)
-                    fig.tight_layout()
-                    fig.savefig(path, dpi=180, bbox_inches="tight")
-                    plt.close(fig)
-            else:
-                raise ValueError("Неподдерживаемый формат экспорта")
+            with pd.ExcelWriter(path, engine="openpyxl") as writer:
+                frame.to_excel(writer, sheet_name="Данные", index=False)
+                sheet = writer.sheets["Данные"]
+                sheet.freeze_panes = "A2"
+                sheet.auto_filter.ref = sheet.dimensions
+                for column_cells in sheet.columns:
+                    width = max(len(str(cell.value or "")) for cell in column_cells)
+                    sheet.column_dimensions[column_cells[0].column_letter].width = min(width + 2, 40)
             return {"ok": True, "path": str(path), "message": f"Сохранено: {path.name}"}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
