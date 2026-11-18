@@ -154,6 +154,7 @@ function renderFormulaEditor(lines = [], formulas = []) {
                 const current = getFormulaLines();
                 current.splice(index, 1);
                 renderFormulaEditor(current, currentState?.formulas || []);
+                scheduleFormulaApply();
                 const target = container.children[Math.max(0, index - 1)]?.querySelector("input");
                 target?.focus();
             }
@@ -517,10 +518,12 @@ function renderDatasets(datasets) {
 function renderState(state, updateEditor = false, preserveFormulaEditor = false) {
     currentState = state;
 
-    if (!preserveFormulaEditor && (updateEditor || !byId("formula-editor-list").children.length)) {
-        renderFormulaEditor(state.lines || [], state.formulas || []);
-    } else if (preserveFormulaEditor) {
+    if (preserveFormulaEditor) {
         updateFormulaPreviews(state.formulas || []);
+    } else if (updateEditor || !byId("formula-editor-list").children.length) {
+        renderFormulaEditor(state.lines || [], state.formulas || []);
+    } else {
+        renderFormulaEditor(getFormulaLines(), state.formulas || []);
     }
     renderVariables(state.variables);
     renderFunctions(state.functions);
