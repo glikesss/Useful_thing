@@ -21,6 +21,8 @@ class PlotManager:
         self._xlabel = xlabel
         self._ylabel = ylabel
         self._grid = grid
+        self._legend_visible = True
+        self._legend_position = "best"
 
         self.figure, self.axes = plt.subplots(figsize=figsize)
         self.figure.patch.set_facecolor("#101827")
@@ -130,10 +132,28 @@ class PlotManager:
 
         legend = self.axes.get_legend()
 
-        if labels:
-            legend = self.axes.legend(facecolor="#172235", edgecolor="#475569", labelcolor="#e2e8f0")
-        elif legend is not None:
-            legend.remove()
+        if not self._legend_visible or not labels:
+            if legend is not None:
+                legend.remove()
+            return
+
+        self.axes.legend(
+            loc=self._legend_position,
+            facecolor="#172235",
+            edgecolor="#475569",
+            labelcolor="#e2e8f0",
+        )
+
+    def set_legend(self, *, visible=True, position="best"):
+        allowed = {
+            "best", "upper right", "upper left", "lower right", "lower left",
+            "center right", "center left", "upper center", "lower center", "center",
+        }
+        if position not in allowed:
+            raise ValueError(f"Недопустимое положение легенды: {position}")
+        self._legend_visible = bool(visible)
+        self._legend_position = position
+        self._refresh_legend()
 
     def clear(self):
         self.axes.clear()
