@@ -551,4 +551,4 @@ def test_bridge_exports_rendered_plot_image(tmp_path, monkeypatch, file_format):
     assert response["ok"] is True, response
     assert output.is_file()
     assert output.stat().st_size > 0
-    assert output.read_bytes().startswith(b"%PDF" if file_format == "pdf" else b"\\x89PNG")
+    assert output.read_bytes().startswith(b"%PDF" if file_format == "pdf" else b"\x89PNG")
