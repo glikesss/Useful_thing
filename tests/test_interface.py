@@ -237,7 +237,7 @@ def test_bridge_processes_dataset_without_modifying_source(tmp_path):
 def test_bridge_filters_dataset_without_modifying_source(tmp_path):
     path = tmp_path / "signal.csv"
     path.write_text(
-        "time,value\\n0,10\\n1,20\\n2,30\\n3,40\\n",
+        "time,value\n0,10\n1,20\n2,30\n3,40\n",
         encoding="utf-8",
     )
     bridge = MathLabBridge()
