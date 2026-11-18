@@ -1018,6 +1018,7 @@ async function refreshTable() {
 
 async function renderPlot() {
     if (!plotCurves.length) {
+        renderPlotApproximations([]);
         setMessage("plot-message", "Добавьте хотя бы одну кривую", "error");
         return;
     }
@@ -1058,6 +1059,7 @@ async function renderPlot() {
 
         byId("plot-image").src = response.image;
         byId("plot-image").hidden = false;
+        renderPlotApproximations(response.approximations || []);
         byId("export-plot-png").disabled = false;
         byId("export-plot-pdf").disabled = false;
         byId("plot-placeholder").hidden = true;
@@ -1073,6 +1075,33 @@ async function renderPlot() {
         );
     } catch (error) {
         setMessage("plot-message", error.message, "error");
+    }
+}
+
+function renderPlotApproximations(approximations = []) {
+    const panel = byId("plot-approximation-results");
+    const list = byId("plot-approximation-list");
+    list.replaceChildren();
+    panel.hidden = !approximations.length;
+
+    for (const approximation of approximations) {
+        const item = document.createElement("div");
+        item.className = "plot-approximation-item";
+
+        const label = document.createElement("div");
+        label.className = "plot-approximation-label";
+        label.textContent = approximation.label;
+
+        const formula = document.createElement("code");
+        formula.className = "plot-approximation-formula";
+        formula.textContent = approximation.formula;
+
+        const score = document.createElement("span");
+        score.className = "plot-approximation-score";
+        score.textContent = "R² = " + Number(approximation.r_squared).toFixed(5);
+
+        item.append(label, formula, score);
+        list.appendChild(item);
     }
 }
 
