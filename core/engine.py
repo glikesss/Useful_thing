@@ -38,6 +38,32 @@ def _numeric_array(expression):
         values.append(item)
     return np.asarray(values).reshape(expression.shape)
 
+def _evaluate_expression(expression, variables):
+    if isinstance(expression, np.ndarray):
+        result = _substitute_expression(
+            expression,
+            {sp.Symbol(name): value for name, value in variables.items()},
+        )
+        if _expression_symbols(result):
+            return result
+        return _numeric_array(result)
+
+    if isinstance(expression, sp.Basic):
+        symbols = sorted(expression.free_symbols, key=str)
+        if any(isinstance(variables.get(str(symbol)), np.ndarray) for symbol in symbols):
+            function = sp.lambdify(symbols, expression, modules=["numpy", "math"])
+            result = function(*(variables[str(symbol)] for symbol in symbols))
+            if isinstance(result, np.ndarray):
+                return np.asarray(result)
+            if isinstance(result, sp.Basic) and result.is_number:
+                return float(sp.N(result))
+            return result
+        return expression.subs({
+            sp.Symbol(name): value for name, value in variables.items()
+        })
+    return expression
+
+
 
 from .parser import (
     ExpressionParser,
@@ -248,7 +274,7 @@ class MathEngine:
                     value = evaluator.evaluate(source_expression)
 
                 else:
-                    expression = _substitute_expression(expression, {sp.Symbol(key): value for key, value in resolved.items()})
+                    expression = _evaluate_expression(expression, resolved)
 
                     remaining = _expression_symbols(expression)
                     if remaining:
@@ -258,9 +284,7 @@ class MathEngine:
                             + ", ".join(unknown)
                         )
 
-                    if isinstance(expression, np.ndarray):
-                        value = _numeric_array(expression)
-                    else:
+                    if isinstance(expression, sp.Basic):
                         value = sp.N(expression)
                         if value.is_real is False:
                             raise EvaluationError(
@@ -485,16 +509,7 @@ class MathEngine:
                 if not isinstance(value, Quantity)
             }
 
-            expression = _substitute_expression(expression, substitutions)
-
-            if _expression_symbols(expression):
-                unknown = sorted(
-                    str(symbol)
-                    for symbol in _expression_symbols(expression)
-                )
-                raise EvaluationError(
-                    "РќРµРёР·РІРµСЃС‚РЅС‹Рµ РїРµСЂРµРјРµРЅРЅС‹Рµ: " + ", ".join(unknown)
-                )
+            expression = _evaluate_expression(expression, variables)
 
             remaining = _expression_symbols(expression)
             if remaining:
@@ -504,9 +519,9 @@ class MathEngine:
                 )
 
             if isinstance(expression, np.ndarray):
-                return _numeric_array(expression)
+                return expression
 
-            if expression.is_number:
+            if isinstance(expression, sp.Basic) and expression.is_number:
                 return float(sp.N(expression))
 
             return expression
