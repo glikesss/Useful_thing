@@ -97,7 +97,17 @@ function renderFormulaEditor(lines = [], formulas = []) {
 
         input.addEventListener("input", () => scheduleFormulaApply());
         input.addEventListener("keydown", event => {
-            if (event.key === "Enter" && !event.ctrlKey && !event.shiftKey) {
+            if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                const targetIndex = index + (event.key === "ArrowUp" ? -1 : 1);
+                const target = container.children[targetIndex]?.querySelector(".formula-row-input");
+                if (target) {
+                    event.preventDefault();
+                    target.focus();
+                    target.executeCommand(event.key === "ArrowUp"
+                        ? "moveToMathfieldEnd"
+                        : "moveToMathfieldStart");
+                }
+            } else if (event.key === "Enter" && !event.ctrlKey && !event.shiftKey) {
                 event.preventDefault();
                 addFormulaLine(index + 1);
             } else if (event.key === "Enter" && event.ctrlKey) {
@@ -586,9 +596,6 @@ function renderDatasets(datasets) {
     for (const dataset of datasets) {
         const item = document.createElement("div");
         item.className = "dataset-item";
-        if (datasets.length > 4 && !datasetsExpanded && datasets.indexOf(dataset) >= 3) {
-            item.hidden = true;
-        }
 
         const details = document.createElement("div");
         const name = document.createElement("div");
