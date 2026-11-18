@@ -361,7 +361,8 @@ class MathLabBridge:
             )
             if not selected:
                 return {"ok": False, "cancelled": True}
-            return self.export_csv(name, selected[0])
+            selected_path = selected if isinstance(selected, (str, Path)) else selected[0]
+            return self.export_csv(name, selected_path)
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
