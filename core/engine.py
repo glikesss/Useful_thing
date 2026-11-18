@@ -126,10 +126,11 @@ from scipy.integrate import quad
 from scipy.integrate import cumulative_trapezoid
 
 class MathEngine:
-    def __init__(self):
+    def __init__(self, file_provider=None):
         self.lines = []
 
-        self.parser = ExpressionParser()
+        self.file_provider = file_provider
+        self.parser = ExpressionParser(file_provider=self.file_provider)
         self.variables = VariableStore()
         self.symbolic_variables = {}
         self.external_variables = {}
@@ -218,8 +219,13 @@ class MathEngine:
     # РџР•Р Р•РЎР‘РћР РљРђ РЇР”Р Рђ
     # -------------------------------------------------
 
+    def set_file_provider(self, provider):
+        self.file_provider = provider
+        self.parser = ExpressionParser(file_provider=provider)
+        self._rebuild()
+
     def _rebuild(self):
-        self.parser = ExpressionParser()
+        self.parser = ExpressionParser(file_provider=self.file_provider)
 
         self.variables.clear()
         self.variables.update(self.symbolic_variables)
