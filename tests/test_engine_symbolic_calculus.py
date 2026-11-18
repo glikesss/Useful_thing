@@ -1,3 +1,4 @@
+import pytest
 import sympy as sp
 
 from core import MathEngine
@@ -77,3 +78,60 @@ def test_symbolic_quantity_divided_by_physical_constant():
     assert isinstance(result, SymbolicQuantity)
     assert result.expression == sp.Symbol("x") / 2
     assert result.dimension == LENGTH / TIME
+
+def test_symbolic_quantity_plus_physical_quantity():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.variables.set("a", Quantity(5, LENGTH))
+
+    result = engine.evaluate("x + a")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == sp.Symbol("x") + 5
+    assert result.dimension == LENGTH
+
+
+def test_physical_quantity_plus_symbolic_quantity():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.variables.set("a", Quantity(5, LENGTH))
+
+    result = engine.evaluate("a + x")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == sp.Symbol("x") + 5
+    assert result.dimension == LENGTH
+
+
+def test_symbolic_quantity_minus_physical_quantity():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.variables.set("a", Quantity(5, LENGTH))
+
+    result = engine.evaluate("x - a")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == sp.Symbol("x") - 5
+    assert result.dimension == LENGTH
+
+
+def test_physical_quantity_minus_symbolic_quantity():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.variables.set("a", Quantity(5, LENGTH))
+
+    result = engine.evaluate("a - x")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == 5 - sp.Symbol("x")
+    assert result.dimension == LENGTH
+
+
+def test_symbolic_quantity_addition_dimension_mismatch():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.variables.set("a", Quantity(5, TIME))
+
+    with pytest.raises(Exception):
+        engine.evaluate("x + a")
+

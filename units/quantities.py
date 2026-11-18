@@ -40,6 +40,9 @@ class Quantity:
             )
 
     def __add__(self, other):
+        if isinstance(other, SymbolicQuantity):
+            return other.__radd__(self)
+
         self._check_compatible(other)
 
         return Quantity(
@@ -51,6 +54,9 @@ class Quantity:
         return self.__add__(other)
 
     def __sub__(self, other):
+        if isinstance(other, SymbolicQuantity):
+            return other.__rsub__(self)
+
         self._check_compatible(other)
 
         return Quantity(
@@ -243,12 +249,19 @@ class SymbolicQuantity:
                 ) from None
 
         if expression.is_Add:
-            result = cls._infer_dimension(
-                expression.args[0], dimensions
-            )
+            result = None
 
-            for term in expression.args[1:]:
+            for term in expression.args:
                 current = cls._infer_dimension(term, dimensions)
+
+                # ???????? ????????? ????? ???????????? ??????????
+                # ????????, ??????????? ??????? ?????? ?????.
+                if current.is_dimensionless and term.is_number:
+                    continue
+
+                if result is None:
+                    result = current
+                    continue
 
                 if current != result:
                     raise DimensionError(
@@ -256,7 +269,7 @@ class SymbolicQuantity:
                         f"{result} and {current}"
                     )
 
-            return result
+            return result if result is not None else DIMENSIONLESS
 
         if expression.is_Mul:
             result = DIMENSIONLESS
@@ -357,7 +370,18 @@ class SymbolicQuantity:
             )
 
     def __add__(self, other):
-        if not isinstance(other, SymbolicQuantity):
+        if isinstance(other, Quantity):
+            if self.dimension != other.dimension:
+                raise DimensionError(
+                    f"Incompatible dimensions: "
+                    f"{self.dimension} and {other.dimension}"
+                )
+
+            other = SymbolicQuantity(
+                sp.sympify(other.value),
+                other.dimension,
+            )
+        elif not isinstance(other, SymbolicQuantity):
             other = self._coerce_additive_scalar(other)
 
         self._check_compatible(other)
@@ -377,7 +401,18 @@ class SymbolicQuantity:
         return self.__add__(other)
 
     def __sub__(self, other):
-        if not isinstance(other, SymbolicQuantity):
+        if isinstance(other, Quantity):
+            if self.dimension != other.dimension:
+                raise DimensionError(
+                    f"Incompatible dimensions: "
+                    f"{self.dimension} and {other.dimension}"
+                )
+
+            other = SymbolicQuantity(
+                sp.sympify(other.value),
+                other.dimension,
+            )
+        elif not isinstance(other, SymbolicQuantity):
             other = self._coerce_additive_scalar(other)
 
         self._check_compatible(other)
@@ -394,6 +429,19 @@ class SymbolicQuantity:
         )
 
     def __rsub__(self, other):
+        if isinstance(other, Quantity):
+            if other.dimension != self.dimension:
+                raise DimensionError(
+                    f"Incompatible dimensions: "
+                    f"{other.dimension} and {self.dimension}"
+                )
+
+            return SymbolicQuantity(
+                sp.sympify(other.value) - self.expression,
+                self.dimension,
+                self.symbol_dimensions,
+            )
+
         if not isinstance(other, SymbolicQuantity):
             other = self._coerce_additive_scalar(other)
 
