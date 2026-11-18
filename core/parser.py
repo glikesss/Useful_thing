@@ -236,7 +236,14 @@ class _ExpressionConverter:
                 raise ParseError("Массив не может быть пустым")
             values = [self.convert(item) for item in node.elts]
             try:
-                result = np.asarray(values, dtype=object)
+                if all(
+                    isinstance(value, (int, float, np.number))
+                    or (isinstance(value, sp.Number) and value.is_real is True)
+                    for value in values
+                ):
+                    result = np.asarray([float(value) for value in values], dtype=float)
+                else:
+                    result = np.asarray(values, dtype=object)
             except (TypeError, ValueError) as exc:
                 raise ParseError("Массив должен быть прямоугольным") from exc
             if result.ndim != 1:
