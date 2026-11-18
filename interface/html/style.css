@@ -387,6 +387,19 @@ footer {
 }
 .formula-row-result.error { color: var(--danger, #d65b5b); }
 
+.formula-row-result.array-preview {
+    display: block;
+    padding: 7px 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: 7px;
+    background: rgba(8, 18, 32, .42);
+    color: var(--text-muted);
+    font: 12px/1.6 Consolas, monospace;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+
 .formula-row-remove:hover {
     color: #ffaaaa;
     border-color: rgba(255, 130, 130, .25);
