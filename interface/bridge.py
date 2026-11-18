@@ -265,6 +265,8 @@ class MathLabBridge:
                 raise TypeError("options must be an object")
             x_column = options.get("x_column")
             window = options.get("window", 3)
+            method = options.get("method", "moving_average")
+            polyorder = options.get("polyorder", 2)
             if not isinstance(name, str) or not name.strip():
                 raise ValueError("Не выбран набор данных")
             with self._lock:
@@ -273,7 +275,7 @@ class MathLabBridge:
             if operation == "smooth":
                 if not column:
                     raise ValueError("Выберите столбец")
-                result = smooth(frame, column, window=window)
+                result = smooth(frame, column, window=window, method=method, polyorder=polyorder)
                 base_name = f"{name}_smooth"
                 result_label = "Сглаживание"
             elif operation == "derivative":
