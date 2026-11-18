@@ -128,7 +128,11 @@ function renderFormulaEditor(lines = [], formulas = []) {
             scheduleFormulaApply();
         });
 
-        item.append(number, input, remove);
+        const result = document.createElement("span");
+        result.className = "formula-row-result";
+        result.hidden = true;
+
+        item.append(number, input, remove, result);
         container.appendChild(item);
     });
 }
@@ -584,31 +588,74 @@ async function refreshState(updateEditor = false) {
     renderState(state, updateEditor);
 }
 
+function isDefinitionLine(source) {
+    let depth = 0;
+    for (let i = 0; i < source.length; i++) {
+        const char = source[i];
+        if ("([{".includes(char)) depth++;
+        else if (")]}".includes(char)) depth--;
+        else if (char === "=" && depth === 0) {
+            const before = source[i - 1] || "";
+            const after = source[i + 1] || "";
+            if (!"<>!=".includes(before) && after !== "=") return true;
+        }
+    }
+    return false;
+}
+
 async function applyFormulas(automatic = false) {
     clearTimeout(formulaApplyTimer);
     const requestId = ++formulaApplyRequest;
     const lines = getFormulaLines();
+    const definitions = lines.filter(isDefinitionLine);
+    const expressions = lines.filter(line => !isDefinitionLine(line));
 
     try {
-        const response = await api.set_lines(lines);
+        const response = await api.set_lines(definitions);
         if (requestId !== formulaApplyRequest) return;
 
         if (!response.ok) {
-            setMessage("formula-message", automatic ? response.error : response.error, "error");
-            
+            setMessage("formula-message", response.error, "error");
             return;
         }
 
         renderState(response.state, false, true);
+        const rows = Array.from(document.querySelectorAll(".formula-row"));
+        let expressionIndex = 0;
+
+        for (let i = 0; i < lines.length; i++) {
+            const result = rows[i]?.querySelector(".formula-row-result");
+            if (!result) continue;
+
+            if (isDefinitionLine(lines[i])) {
+                result.hidden = true;
+                result.textContent = "";
+                continue;
+            }
+
+            const expression = expressions[expressionIndex++];
+            if (!expression) continue;
+
+            try {
+                const evaluated = await api.evaluate(expression);
+                if (requestId !== formulaApplyRequest) return;
+                result.textContent = evaluated.ok ? "= " + evaluated.result : evaluated.error;
+                result.hidden = false;
+                result.classList.toggle("error", !evaluated.ok);
+            } catch (error) {
+                result.textContent = error.message;
+                result.hidden = false;
+                result.classList.add("error");
+            }
+        }
+
         setMessage("formula-message", automatic ? "Изменения применены" : response.message, "success");
-        if (byId("expression-input").value.trim()) scheduleExpressionEvaluation();
     } catch (error) {
         if (requestId === formulaApplyRequest) {
             setMessage("formula-message", error.message, "error");
         }
     }
 }
-
 function addFormulaLine(afterIndex = null) {
     const lines = getFormulaLines();
     const insertAt = afterIndex === null ? lines.length : afterIndex;
@@ -834,12 +881,6 @@ byId("clear-formulas").addEventListener("click", async () => {
     await applyFormulas();
 });
 byId("add-formula-line").addEventListener("click", () => addFormulaLine());
-
-byId("evaluate-button").addEventListener("click", evaluateExpression);
-byId("expression-input").addEventListener("input", scheduleExpressionEvaluation);
-byId("expression-input").addEventListener("keydown", event => {
-    if (event.key === "Enter") evaluateExpression();
-});
 
 byId("load-csv").addEventListener("click", loadCsv);
 byId("array-import-dataset").addEventListener("change", updateArrayImportColumns);
