@@ -37,27 +37,15 @@
                 <code>a = 2.5</code> и <code>f(x) = a*x</code>.
             </p>
 
-            <textarea
-                id="formula-input"
-                spellcheck="false"
-                placeholder="a = 2.5&#10;f(x) = a*x&#10;g(x) = sin(x)"
-            ></textarea>
+            <div class="formula-editor" id="formula-editor-list"></div>
 
-            <div class="button-row">
-                <button class="button primary" id="apply-formulas">
-                    Применить формулы
-                </button>
-                <button class="button secondary" id="clear-formulas">
-                    Очистить
-                </button>
-                <button class="button secondary" id="add-formula-line">+ Строка</button>
-                <button class="button secondary" id="remove-formula-line">− Строка</button>
+            <div class="button-row formula-toolbar">
+                <button class="button primary" id="apply-formulas">Применить</button>
+                <button class="button secondary" id="add-formula-line">+ Добавить строку</button>
+                <button class="button secondary" id="clear-formulas">Очистить всё</button>
             </div>
 
             <div class="message" id="formula-message"></div>
-            <div class="formula-render-list" id="formula-render-list">
-                <div class="empty">Здесь появится математическое представление формул</div>
-            </div>
 
             <div class="subsection">
                 <div class="subsection-title">ПЕРЕМЕННЫЕ</div>
