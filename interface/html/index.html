@@ -249,6 +249,24 @@
                     <input id="plot-smoothing-window" type="number" min="3" step="2" value="5" disabled>
                 </label>
             </div>
+            <div class="legend-controls plot-approximation-controls">
+                <label class="legend-toggle">
+                    <input id="plot-approximation-enabled" type="checkbox">
+                    Добавить аппроксимацию
+                </label>
+                <label>Модель
+                    <select id="plot-approximation-model" disabled>
+                        <option value="linear">Линейная</option>
+                        <option value="polynomial">Полиномиальная</option>
+                        <option value="exponential">Экспоненциальная</option>
+                        <option value="logarithmic">Логарифмическая</option>
+                        <option value="power">Степенная</option>
+                    </select>
+                </label>
+                <label>Степень полинома
+                    <input id="plot-approximation-degree" type="number" min="2" max="12" value="2" disabled>
+                </label>
+            </div>
             <div class="plot-container">
                 <div id="plot-placeholder">
                     Загрузите CSV и выберите столбцы для построения графика
