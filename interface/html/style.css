@@ -309,6 +309,15 @@ footer {
     line-height: 1;
     cursor: pointer;
 }
+.formula-row-result {
+    grid-column: 2;
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 2px 4px 6px;
+    overflow-wrap: anywhere;
+}
+.formula-row-result.error { color: var(--danger, #d65b5b); }
+
 .formula-row-remove:hover {
     color: #ffaaaa;
     border-color: rgba(255, 130, 130, .25);
