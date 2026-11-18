@@ -1,4 +1,4 @@
-﻿const byId = (id) => document.getElementById(id);
+const byId = (id) => document.getElementById(id);
 
 let api = null;
 let currentState = null;
@@ -317,137 +317,22 @@ function addPlotCurve() {
     setMessage("plot-message", `Добавлена кривая: ${label}`, "success");
 }
 
-function updateProcessingControls() {
-    const datasetSelect = byId("process-dataset");
-    const columnSelect = byId("process-column");
-    const xSelect = byId("process-x-column");
-    const dataset = currentState?.datasets.find(item => item.name === datasetSelect.value);
-    columnSelect.replaceChildren();
-    xSelect.replaceChildren();
-    addOption(xSelect, "", "Индекс строк");
-    if (!dataset) {
-        addOption(columnSelect, "", "Нет данных");
-        columnSelect.disabled = true;
-        xSelect.disabled = true;
-        byId("run-processing").disabled = true;
-        return;
-    }
-    for (const column of dataset.numeric_columns) {
-        addOption(columnSelect, column, column);
-        addOption(xSelect, column, column);
-    }
-    // Prefer the first numeric column as X (usually time).
-    // If a smoothed column exists, select it as Y for the next operation.
-    if (dataset.numeric_columns.length > 1) {
-        const smoothedIndex = dataset.numeric_columns.findIndex(
-            column => column.endsWith("_smoothed")
-        );
-        columnSelect.selectedIndex = smoothedIndex >= 0 ? smoothedIndex : 1;
-        xSelect.selectedIndex = 1;
-    }
-    columnSelect.disabled = dataset.numeric_columns.length === 0;
-    xSelect.disabled = dataset.numeric_columns.length === 0;
-    byId("run-processing").disabled = false;
-}
-function updateProcessingOperation() {
-    const operation = byId("process-operation").value;
-    const isSmoothing = operation === "smooth";
-    const isFiltering = operation === "filter";
-    const smoothingMethod = byId("process-smoothing-method").value;
-    byId("process-smoothing-method-label").hidden = !isSmoothing;
-    byId("process-window-label").hidden = !isSmoothing;
-    byId("process-polyorder-label").hidden = !isSmoothing || smoothingMethod !== "savgol";
-    byId("process-minimum-label").hidden = !isFiltering;
-    byId("process-maximum-label").hidden = !isFiltering;
-    byId("process-column-label").firstChild.textContent =
-        isFiltering ? "Столбец" : "Столбец Y";
-    byId("process-column").disabled = operation === "statistics" || !currentState?.datasets.length;
-    byId("process-x-column").disabled = !["derivative", "integrate"].includes(operation);
-}
-async function runProcessing() {
-    const operation = byId("process-operation").value;
-    const name = byId("process-dataset").value;
-    const column = byId("process-column").value;
-    const xColumn = byId("process-x-column").value || null;
-    const window = Number(byId("process-window").value);
-    try {
-        const minimumText = byId("process-minimum").value.trim();
-        const maximumText = byId("process-maximum").value.trim();
-        const response = await api.process_dataset(name, operation, column, {
-            x_column: xColumn,
-            window,
-            method: byId("process-smoothing-method").value,
-            polyorder: Number(byId("process-polyorder").value),
-            minimum: minimumText === "" ? null : Number(minimumText),
-            maximum: maximumText === "" ? null : Number(maximumText),
-        });
-        if (!response.ok) {
-            setMessage("processing-message", response.error, "error");
-            return;
-        }
-        const descriptions = {
-            filter: `Фильтрация столбца ${column} по включительному диапазону [${minimumText || "−∞"}, ${maximumText || "+∞"}].`,
-            smooth: byId("process-smoothing-method").value === "savgol"
-                ? `Савицкий — Голея: окно ${window} точек, полином ${Number(byId("process-polyorder").value)}-го порядка.`
-                : `Скользящее среднее: окно ${window} точек.`,
-            derivative: "Конечная разность: (Y следующей строки − Y текущей строки) / (X следующей строки − X текущей строки). Для последней строки используется предыдущий интервал.",
-            integrate: "Численное интегрирование методом трапеций: ∫Y dX.",
-            statistics: "Описательная статистика для всех числовых столбцов: count — число значений; mean — среднее; std — стандартное отклонение; min/max — минимум/максимум; 25%/50%/75% — квартили."
-        };
-        const derivativeColumn = operation === "derivative"
-            ? `d_${column}_d_${xColumn}`
-            : null;
-        const details = operation === "derivative"
-            ? `Операция: производная Y по X
-Y: ${column}
-X: ${xColumn}
-Формула: (Y следующей строки − Y текущей строки) / (X следующей строки − X текущей строки)
-Новый столбец: ${derivativeColumn}
-Последняя строка повторяет значение предыдущего интервала.`
-            : (descriptions[operation] || "");
-        byId("processing-result").textContent =
-            details + "\n\n" +
-            (operation === "integrate"
-                ? `${response.message} = ${response.result}`
-                : (response.result ?? response.message ?? ""));
-        if (response.state) renderState(response.state);
-        if (response.dataset_name) {
-            byId("table-dataset").value = response.dataset_name;
-            if (["smooth", "filter"].includes(operation)) {
-                byId("process-dataset").value = response.dataset_name;
-                updateProcessingControls();
-            }
-            await refreshTable();
-        }
-        setMessage("processing-message", response.message, "success");
-    } catch (error) {
-        setMessage("processing-message", error.message, "error");
-    }
-}
-
 function renderDatasets(datasets) {
     const container = byId("datasets-list");
     const plotSelect = byId("plot-dataset");
     const tableSelect = byId("table-dataset");
-    const processSelect = byId("process-dataset");
-
     const previousPlot = plotSelect.value;
     const previousTable = tableSelect.value;
-    const previousProcess = processSelect.value;
 
     container.replaceChildren();
     plotSelect.replaceChildren();
     tableSelect.replaceChildren();
-    processSelect.replaceChildren();
 
     if (!datasets.length) {
         container.textContent = "CSV-файлы ещё не загружены";
         container.className = "dataset-list empty";
         addOption(plotSelect, "", "Нет данных");
         addOption(tableSelect, "", "Нет данных");
-        addOption(processSelect, "", "Нет данных");
-        processSelect.disabled = true;
-        byId("run-processing").disabled = true;
         plotSelect.disabled = true;
         tableSelect.disabled = true;
         byId("refresh-table").disabled = true;
@@ -460,12 +345,10 @@ function renderDatasets(datasets) {
     container.className = "dataset-list";
     plotSelect.disabled = false;
     tableSelect.disabled = false;
-    processSelect.disabled = false;
     byId("refresh-table").disabled = false;
 
     addOption(plotSelect, "", "Выберите набор");
     addOption(tableSelect, "", "Выберите набор");
-    addOption(processSelect, "", "Выберите набор");
 
     for (const dataset of datasets) {
         const item = document.createElement("div");
@@ -501,7 +384,6 @@ function renderDatasets(datasets) {
 
         addOption(plotSelect, dataset.name, dataset.name);
         addOption(tableSelect, dataset.name, dataset.name);
-        addOption(processSelect, dataset.name, dataset.name);
     }
 
     plotSelect.value = datasets.some(item => item.name === previousPlot)
@@ -512,10 +394,7 @@ function renderDatasets(datasets) {
         ? previousTable
         : datasets[0].name;
 
-    processSelect.value = datasets.some(item => item.name === previousProcess) ? previousProcess : datasets[0].name;
     updatePlotColumns();
-    updateProcessingControls();
-    updateProcessingOperation();
     refreshTable();
 }
 
@@ -799,10 +678,6 @@ byId("add-plot-curve").addEventListener("click", addPlotCurve);
 byId("add-array-curve").addEventListener("click", addArrayPlotCurve);
 byId("render-plot").addEventListener("click", renderPlot);
 byId("table-dataset").addEventListener("change", refreshTable);
-byId("process-dataset").addEventListener("change", updateProcessingControls);
-byId("process-operation").addEventListener("change", updateProcessingOperation);
-byId("process-smoothing-method").addEventListener("change", updateProcessingOperation);
-byId("run-processing").addEventListener("click", runProcessing);
 byId("refresh-table").addEventListener("click", refreshTable);
 
 window.addEventListener("pywebviewready", initialize);
