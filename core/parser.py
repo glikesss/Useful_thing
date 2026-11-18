@@ -183,7 +183,7 @@ class ExpressionParser:
         )
         # MathLive can serialize LaTeX ellipsis as a command or Unicode glyph.
         # Normalize all common forms to Python's Ellipsis token before AST parsing.
-        source = re.sub(r"\\\\(?:ldots|dots|cdots)\\b", "...", source)
+        source = re.sub(r"\\(?:ldots|dots|cdots)\b", "...", source)
         source = source.replace("…", "...").replace("⋯", "...")
         source = source.replace("^", "**")
         source = self._insert_implicit_multiplication(source)
