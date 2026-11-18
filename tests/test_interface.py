@@ -234,6 +234,39 @@ def test_bridge_processes_dataset_without_modifying_source(tmp_path):
     assert bridge.data_manager.get_data("signal_derivative")["d_value_d_time"].tolist() == [2.0, 2.0, 2.0]
 
 
+def test_bridge_filters_dataset_without_modifying_source(tmp_path):
+    path = tmp_path / "signal.csv"
+    path.write_text(
+        "time,value\\n0,10\\n1,20\\n2,30\\n3,40\\n",
+        encoding="utf-8",
+    )
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "signal")
+
+    response = bridge.process_dataset(
+        "signal", "filter", "time", {"minimum": 1, "maximum": 2}
+    )
+
+    assert response["ok"] is True
+    assert response["dataset_name"] == "signal_filtered"
+    assert bridge.data_manager.get_data("signal")["time"].tolist() == [0, 1, 2, 3]
+    filtered = bridge.data_manager.get_data("signal_filtered")
+    assert filtered["time"].tolist() == [1, 2]
+    assert filtered["value"].tolist() == [20, 30]
+
+
+def test_bridge_filter_requires_at_least_one_bound(tmp_path):
+    path = tmp_path / "signal.csv"
+    path.write_text("time,value\\n0,10\\n1,20\\n", encoding="utf-8")
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "signal")
+
+    response = bridge.process_dataset("signal", "filter", "time", {})
+
+    assert response["ok"] is False
+    assert "At least one bound" in response["error"]
+
+
 def test_bridge_derivative_requires_x_column(tmp_path):
     path = tmp_path / "signal.csv"
     path.write_text("time,value\n0,0\n1,2\n2,6\n", encoding="utf-8")
