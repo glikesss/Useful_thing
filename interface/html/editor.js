@@ -198,7 +198,11 @@ function updateProcessingControls() {
 }
 function updateProcessingOperation() {
     const operation = byId("process-operation").value;
-    byId("process-window-label").hidden = operation !== "smooth";
+    const isSmoothing = operation === "smooth";
+    const smoothingMethod = byId("process-smoothing-method").value;
+    byId("process-smoothing-method-label").hidden = !isSmoothing;
+    byId("process-window-label").hidden = !isSmoothing;
+    byId("process-polyorder-label").hidden = !isSmoothing || smoothingMethod !== "savgol";
     byId("process-column").disabled = operation === "statistics" || !currentState?.datasets.length;
     byId("process-x-column").disabled = !["derivative", "integrate"].includes(operation);
 }
@@ -212,13 +216,17 @@ async function runProcessing() {
         const response = await api.process_dataset(name, operation, column, {
             x_column: xColumn,
             window,
+            method: byId("process-smoothing-method").value,
+            polyorder: Number(byId("process-polyorder").value),
         });
         if (!response.ok) {
             setMessage("processing-message", response.error, "error");
             return;
         }
         const descriptions = {
-            smooth: "Скользящее среднее: каждое значение заменяется средним в окне указанного размера.",
+            smooth: byId("process-smoothing-method").value === "savgol"
+                ? "Савицкий — Голея: локальная аппроксимация полиномом. Окно должно быть нечётным; порядок полинома меньше размера окна."
+                : "Скользящее среднее: каждое значение заменяется средним в окне указанного размера.",
             derivative: "Конечная разность: (Y следующей строки − Y текущей строки) / (X следующей строки − X текущей строки). Для последней строки используется предыдущий интервал.",
             integrate: "Численное интегрирование методом трапеций: ∫Y dX.",
             statistics: "Описательная статистика для всех числовых столбцов: count — число значений; mean — среднее; std — стандартное отклонение; min/max — минимум/максимум; 25%/50%/75% — квартили."
@@ -606,6 +614,7 @@ byId("render-plot").addEventListener("click", renderPlot);
 byId("table-dataset").addEventListener("change", refreshTable);
 byId("process-dataset").addEventListener("change", updateProcessingControls);
 byId("process-operation").addEventListener("change", updateProcessingOperation);
+byId("process-smoothing-method").addEventListener("change", updateProcessingOperation);
 byId("run-processing").addEventListener("click", runProcessing);
 byId("refresh-table").addEventListener("click", refreshTable);
 
