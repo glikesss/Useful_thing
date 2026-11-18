@@ -191,6 +191,7 @@
                 <label>Набор данных<select id="process-dataset" disabled><option value="">Нет данных</option></select></label>
                 <label>Операция<select id="process-operation">
                     <option value="smooth">Сглаживание</option>
+                    <option value="filter">Фильтрация по диапазону</option>
                     <option value="derivative">Производная</option>
                     <option value="integrate">Интеграл</option>
                     <option value="statistics">Статистика</option>
@@ -202,6 +203,8 @@
                     <option value="savgol">Савицкий — Голея</option>
                 </select></label>
                 <label id="process-window-label">Размер окна<input id="process-window" type="number" min="1" step="1" value="5"></label>
+                <label id="process-minimum-label" hidden>Минимум<input id="process-minimum" type="number" step="any" placeholder="Без ограничения"></label>
+                <label id="process-maximum-label" hidden>Максимум<input id="process-maximum" type="number" step="any" placeholder="Без ограничения"></label>
                 <label id="process-polyorder-label" hidden>Порядок полинома<input id="process-polyorder" type="number" min="1" step="1" value="2"></label>
                 <button class="button primary" id="run-processing" disabled>Выполнить</button>
             </div>
