@@ -225,7 +225,9 @@ async function runProcessing() {
         };
         byId("processing-result").textContent =
             (descriptions[operation] || "") + "\\n\\n" +
-            (response.result ?? response.message ?? "");
+            (operation === "integrate"
+                ? `${response.message} = ${response.result}`
+                : (response.result ?? response.message ?? ""));
         if (response.state) renderState(response.state);
         if (response.dataset_name) {
             byId("table-dataset").value = response.dataset_name;

@@ -289,8 +289,8 @@ class MathLabBridge:
                 x_label = x_column or "индекс строк"
                 return {
                     "ok": True,
-                    "result": f"∫ {column} d({x_label}) = {value}",
-                    "message": "Интеграл рассчитан методом трапеций",
+                    "result": self._format_value(value),
+                    "message": f"Интеграл методом трапеций: ∫ {column} d({x_label})",
                 }
             elif operation == "statistics":
                 result = statistics(frame)
