@@ -213,6 +213,10 @@
                     <button class="button primary" id="render-plot" disabled>Построить график</button>
                 </div>
             </div>
+            <div class="plot-export-toolbar">
+                <button class="button secondary" id="export-plot-png" disabled>PNG</button>
+                <button class="button secondary" id="export-plot-pdf" disabled>PDF</button>
+            </div>
             <div class="legend-controls">
                 <label class="legend-toggle"><input id="plot-legend-visible" type="checkbox" checked> Показывать легенду</label>
                 <label>Положение легенды
@@ -251,8 +255,6 @@
                     <option value="">Нет данных</option>
                 </select>
                 <button class="button secondary" id="refresh-table" disabled>Обновить</button>
-                <button class="button secondary" id="export-table-png" disabled>PNG</button>
-                <button class="button secondary" id="export-table-pdf" disabled>PDF</button>
                 <button class="button secondary" id="export-table-xlsx" disabled>Excel</button>
                 <span id="table-info" class="dataset-meta"></span>
             </div>
