@@ -238,6 +238,7 @@ def test_plot_approximation_models(model, x, y):
 
     assert len(fit) == 300
     assert fit["x"].is_monotonic_increasing
+    assert fit.attrs["formula"].startswith("y = ")
     assert r_squared == pytest.approx(1.0, abs=1e-10)
 
 
