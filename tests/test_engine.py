@@ -135,3 +135,27 @@ def test_remove_line():
 
     assert engine.get_variable("b") == 3
     assert engine.get_variable_names() == ("b",)
+
+def test_array_literal_variable_and_elementwise_operations():
+    engine = MathEngine()
+    engine.set_lines([
+        "x = [1, 2, 3, 4]",
+        "y = x^2 + 2*x",
+    ])
+
+    assert np.array_equal(engine.get_variable("x"), np.array([1, 2, 3, 4]))
+    assert np.array_equal(engine.get_variable("y"), np.array([3, 8, 15, 24]))
+
+
+def test_array_expression_evaluation():
+    engine = MathEngine()
+    assert np.array_equal(
+        engine.evaluate("sqrt([1, 4, 9])"),
+        np.array([1.0, 2.0, 3.0]),
+    )
+
+
+def test_array_scalar_broadcasting():
+    engine = MathEngine()
+    engine.set_lines(["a = [1, 2, 3]"])
+    assert np.array_equal(engine.evaluate("a * 3 + 1"), np.array([4, 7, 10]))
