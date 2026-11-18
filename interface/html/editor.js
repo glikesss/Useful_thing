@@ -903,14 +903,28 @@ async function exportTable(fileFormat) {
 }
 
 async function exportPlot(fileFormat) {
-    const image = byId("plot-image");
-    if (image.hidden || !image.src) {
+    const graph = getActivePlotGraph();
+    if (!graph || !graph.curves.length) {
         setMessage("plot-message", "Сначала постройте график", "error");
         return;
     }
     try {
-        const title = byId("plot-title").value.trim() || getActivePlotGraph().title || "График";
-        const response = await api.select_export_plot_file(title, image.src, fileFormat);
+        const title = byId("plot-title").value.trim() || graph.title || "График";
+        const arrayCurves = graph.curves.every(curve => curve.source === "array");
+        const csvCurves = graph.curves.every(curve => curve.source !== "array");
+        if (!arrayCurves && !csvCurves) {
+            setMessage("plot-message", "На одном графике нельзя смешивать CSV и массивы", "error");
+            return;
+        }
+        const response = await api.select_export_plot_file(
+            title,
+            graph.curves.map(({source, dataset_name, x_column, y_column, x_name, y_name, label}) =>
+                ({source, dataset_name, x_column, y_column, x_name, y_name, label})),
+            fileFormat,
+            arrayCurves ? "array" : "csv",
+            byId("plot-legend-visible").checked,
+            byId("plot-legend-position").value,
+        );
         if (response.cancelled) return;
         if (!response.ok) {
             setMessage("plot-message", response.error, "error");
