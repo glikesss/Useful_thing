@@ -336,3 +336,18 @@ def test_bridge_applies_savgol_smoothing(tmp_path):
     assert response["dataset_name"] == "signal_smooth"
     smoothed = bridge.data_manager.get_data("signal_smooth")["value_smoothed"]
     assert smoothed.tolist() == pytest.approx([1, 4, 9, 16, 25, 36, 49])
+
+
+def test_bridge_includes_presentation_mathml_for_formulas():
+    bridge = MathLabBridge()
+
+    response = bridge.set_lines([
+        "a = 1/2",
+        "f(x) = sqrt(x^2 + 1)",
+    ])
+
+    assert response["ok"] is True
+    formulas = response["state"]["formulas"]
+    assert [item["name"] for item in formulas] == ["a", "f"]
+    assert all(item["mathml"] for item in formulas)
+    assert all("<math" in item["mathml"] for item in formulas)
