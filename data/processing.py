@@ -36,6 +36,8 @@ def filter_rows(data, column, *, minimum=None, maximum=None):
 
     if minimum is None and maximum is None:
         raise ValueError("At least one bound must be specified")
+    if minimum is not None and maximum is not None and minimum > maximum:
+        raise ValueError("minimum must not exceed maximum")
 
     mask = pd.Series(True, index=data.index)
 
