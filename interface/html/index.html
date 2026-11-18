@@ -213,6 +213,23 @@
                     <button class="button primary" id="render-plot" disabled>Построить график</button>
                 </div>
             </div>
+            <div class="legend-controls">
+                <label class="legend-toggle"><input id="plot-legend-visible" type="checkbox" checked> Показывать легенду</label>
+                <label>Положение легенды
+                    <select id="plot-legend-position">
+                        <option value="best">Автоматически</option>
+                        <option value="upper right">Справа сверху</option>
+                        <option value="upper left">Слева сверху</option>
+                        <option value="lower right">Справа снизу</option>
+                        <option value="lower left">Слева снизу</option>
+                        <option value="center right">Справа по центру</option>
+                        <option value="center left">Слева по центру</option>
+                        <option value="upper center">Сверху по центру</option>
+                        <option value="lower center">Снизу по центру</option>
+                        <option value="center">По центру</option>
+                    </select>
+                </label>
+            </div>
             <div class="plot-container">
                 <div id="plot-placeholder">
                     Загрузите CSV и выберите столбцы для построения графика
