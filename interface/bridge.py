@@ -224,7 +224,7 @@ class MathLabBridge:
                 errors.append(path.name + ": " + response.get("error", "ошибка загрузки"))
 
         if not loaded:
-            return {"ok": False, "error": "\\n".join(errors) or "Не удалось загрузить файлы"}
+            return {"ok": False, "error": "\n".join(errors) or "Не удалось загрузить файлы"}
         with self._lock:
             state = self._build_state()
         message = "Загружено файлов: " + str(len(loaded))
