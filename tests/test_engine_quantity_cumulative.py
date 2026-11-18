@@ -83,3 +83,35 @@ def test_quantity_cumulative_non_monotonic_values():
             variable="t",
             start=Quantity(0, TIME),
         )
+
+
+def test_symbolic_quantity_cumulative_integral():
+    engine = MathEngine()
+    engine.set_symbolic_variable("t", "t", TIME)
+
+    result = engine.cumulative(
+        "3*t",
+        values=[1, 2, 3],
+        variable="t",
+        start=0,
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.dimension == TIME ** 2
+    assert np.allclose(result.value, [1.5, 6.0, 13.5])
+
+
+def test_symbolic_quantity_cumulative_empty_array():
+    engine = MathEngine()
+    engine.set_symbolic_variable("t", "t", TIME)
+
+    result = engine.cumulative(
+        "3*t",
+        values=[],
+        variable="t",
+        start=0,
+    )
+
+    assert isinstance(result, Quantity)
+    assert result.dimension == TIME ** 2
+    assert len(result.value) == 0

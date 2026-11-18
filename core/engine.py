@@ -1,4 +1,4 @@
-import sympy as sp
+﻿import sympy as sp
 import numpy as np
 
 from .parser import (
@@ -65,7 +65,7 @@ class MathEngine:
         self.variables.remove(name)
 
     # -------------------------------------------------
-    # РАБОТА С ФОРМУЛАМИ
+    # Р РђР‘РћРўРђ РЎ Р¤РћР РњРЈР›РђРњР
     # -------------------------------------------------
 
     def add_line(self, source):
@@ -118,7 +118,7 @@ class MathEngine:
 
 
     # -------------------------------------------------
-    # ПЕРЕСБОРКА ЯДРА
+    # РџР•Р Р•РЎР‘РћР РљРђ РЇР”Р Рђ
     # -------------------------------------------------
 
     def _rebuild(self):
@@ -130,16 +130,16 @@ class MathEngine:
         self.functions.clear()
         self.compiled_functions.clear()
 
-        # Сначала разбираем все строки.
-        # Пользовательские функции должны быть объявлены
-        # до первого использования.
+        # РЎРЅР°С‡Р°Р»Р° СЂР°Р·Р±РёСЂР°РµРј РІСЃРµ СЃС‚СЂРѕРєРё.
+        # РџРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРёРµ С„СѓРЅРєС†РёРё РґРѕР»Р¶РЅС‹ Р±С‹С‚СЊ РѕР±СЉСЏРІР»РµРЅС‹
+        # РґРѕ РїРµСЂРІРѕРіРѕ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЏ.
         for source in self.lines:
             parsed = self.parser.parse_definition(source)
             definition = parsed.definition
 
             if definition.name in self.definitions:
                 raise EvaluationError(
-                    f"Имя '{definition.name}' определено повторно"
+                    f"РРјСЏ '{definition.name}' РѕРїСЂРµРґРµР»РµРЅРѕ РїРѕРІС‚РѕСЂРЅРѕ"
                 )
 
             self.definitions[definition.name] = definition
@@ -152,7 +152,7 @@ class MathEngine:
         self._compile_functions()
 
     # -------------------------------------------------
-    # ВЫЧИСЛЕНИЕ ПЕРЕМЕННЫХ
+    # Р’Р«Р§РРЎР›Р•РќРР• РџР•Р Р•РњР•РќРќР«РҐ
     # -------------------------------------------------
 
         
@@ -218,7 +218,7 @@ class MathEngine:
                             for symbol in expression.free_symbols
                         )
                         raise EvaluationError(
-                            f"В переменной '{name}' не определены: "
+                            f"Р’ РїРµСЂРµРјРµРЅРЅРѕР№ '{name}' РЅРµ РѕРїСЂРµРґРµР»РµРЅС‹: "
                             + ", ".join(unknown)
                         )
 
@@ -226,7 +226,7 @@ class MathEngine:
 
                     if value.is_real is False:
                         raise EvaluationError(
-                            f"Переменная '{name}' имеет комплексное значение"
+                            f"РџРµСЂРµРјРµРЅРЅР°СЏ '{name}' РёРјРµРµС‚ РєРѕРјРїР»РµРєСЃРЅРѕРµ Р·РЅР°С‡РµРЅРёРµ"
                         )
 
                     if value.is_number:
@@ -239,14 +239,14 @@ class MathEngine:
 
             except Exception as exc:
                 raise EvaluationError(
-                    f"Не удалось вычислить '{name}': {exc}"
+                    f"РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹С‡РёСЃР»РёС‚СЊ '{name}': {exc}"
                 ) from exc
 
         self.variables.update(resolved)
 
 
     # -------------------------------------------------
-    # КОМПИЛЯЦИЯ ПОЛЬЗОВАТЕЛЬСКИХ ФУНКЦИЙ
+    # РљРћРњРџРР›РЇР¦РРЇ РџРћР›Р¬Р—РћР’РђРўР•Р›Р¬РЎРљРРҐ Р¤РЈРќРљР¦РР™
     # -------------------------------------------------
 
     
@@ -295,7 +295,7 @@ class MathEngine:
             )
 
     # -------------------------------------------------
-    # ВЫЧИСЛЕНИЕ ПРОИЗВОЛЬНОГО ВЫРАЖЕНИЯ
+    # Р’Р«Р§РРЎР›Р•РќРР• РџР РћРР—Р’РћР›Р¬РќРћР“Рћ Р’Р«Р РђР–Р•РќРРЇ
     # -------------------------------------------------
 
     def _evaluate_symbolic_expression(self, expression, variables):
@@ -422,7 +422,7 @@ class MathEngine:
                         for symbol in result.free_symbols
                     )
                     raise EvaluationError(
-                        "Неизвестные переменные: " + ", ".join(unknown)
+                        "РќРµРёР·РІРµСЃС‚РЅС‹Рµ РїРµСЂРµРјРµРЅРЅС‹Рµ: " + ", ".join(unknown)
                     )
 
                 return result
@@ -437,14 +437,14 @@ class MathEngine:
                 for name in symbols
             )
 
-            # Физические выражения обрабатываем ДО SymPy-подстановок.
+            # Р¤РёР·РёС‡РµСЃРєРёРµ РІС‹СЂР°Р¶РµРЅРёСЏ РѕР±СЂР°Р±Р°С‚С‹РІР°РµРј Р”Рћ SymPy-РїРѕРґСЃС‚Р°РЅРѕРІРѕРє.
             if has_quantity or has_unit:
                 return QuantityExpressionEvaluator(
                     variables=variables,
                     functions=self._quantity_function_callbacks(),
                 ).evaluate(source)
 
-            # Обычный путь SymPy.
+            # РћР±С‹С‡РЅС‹Р№ РїСѓС‚СЊ SymPy.
             substitutions = {
                 sp.Symbol(name): value
                 for name, value in variables.items()
@@ -459,7 +459,7 @@ class MathEngine:
                     for symbol in expression.free_symbols
                 )
                 raise EvaluationError(
-                    "Неизвестные переменные: " + ", ".join(unknown)
+                    "РќРµРёР·РІРµСЃС‚РЅС‹Рµ РїРµСЂРµРјРµРЅРЅС‹Рµ: " + ", ".join(unknown)
                 )
 
             if expression.is_number:
@@ -474,7 +474,7 @@ class MathEngine:
             raise EvaluationError(str(exc)) from exc
 
     # -------------------------------------------------
-    # ВЫЗОВ ПОЛЬЗОВАТЕЛЬСКОЙ ФУНКЦИИ
+    # Р’Р«Р—РћР’ РџРћР›Р¬Р—РћР’РђРўР•Р›Р¬РЎРљРћР™ Р¤РЈРќРљР¦РР
     # -------------------------------------------------
 
 
@@ -624,7 +624,7 @@ class MathEngine:
 
 
     # -------------------------------------------------
-    # МАТЕМАТИЧЕСКИЙ АНАЛИЗ
+    # РњРђРўР•РњРђРўРР§Р•РЎРљРР™ РђРќРђР›РР—
     # -------------------------------------------------
 
     def _prepare_calculus_expression(self, source):
@@ -645,7 +645,7 @@ class MathEngine:
             variable_name = str(variable)
             variable_symbol = sp.Symbol(variable_name)
 
-            # Сначала дифференцируем символическое выражение.
+            # РЎРЅР°С‡Р°Р»Р° РґРёС„С„РµСЂРµРЅС†РёСЂСѓРµРј СЃРёРјРІРѕР»РёС‡РµСЃРєРѕРµ РІС‹СЂР°Р¶РµРЅРёРµ.
             result = differentiate(
                 expression,
                 variable_symbol,
@@ -671,7 +671,7 @@ class MathEngine:
                         order,
                     )
 
-            # Определяем, требуется ли физическое вычисление.
+            # РћРїСЂРµРґРµР»СЏРµРј, С‚СЂРµР±СѓРµС‚СЃСЏ Р»Рё С„РёР·РёС‡РµСЃРєРѕРµ РІС‹С‡РёСЃР»РµРЅРёРµ.
             has_quantity = any(
                 isinstance(variables.get(str(symbol)), Quantity)
                 for symbol in result.free_symbols
@@ -691,7 +691,7 @@ class MathEngine:
 
                 return evaluator.evaluate(str(result))
 
-            # Обычный путь SymPy.
+            # РћР±С‹С‡РЅС‹Р№ РїСѓС‚СЊ SymPy.
             substitutions = {
                 sp.Symbol(name): value
                 for name, value in variables.items()
@@ -756,10 +756,10 @@ class MathEngine:
 
             if lower is None or upper is None:
                 raise ParseError(
-                    "Необходимо указать оба предела интегрирования"
+                    "РќРµРѕР±С…РѕРґРёРјРѕ СѓРєР°Р·Р°С‚СЊ РѕР±Р° РїСЂРµРґРµР»Р° РёРЅС‚РµРіСЂРёСЂРѕРІР°РЅРёСЏ"
                 )
 
-            # Определяем, требуется ли физическое вычисление.
+            # РћРїСЂРµРґРµР»СЏРµРј, С‚СЂРµР±СѓРµС‚СЃСЏ Р»Рё С„РёР·РёС‡РµСЃРєРѕРµ РІС‹С‡РёСЃР»РµРЅРёРµ.
             has_quantity = any(
                 isinstance(variables.get(str(item)), Quantity)
                 for item in expression.free_symbols
@@ -799,16 +799,16 @@ class MathEngine:
                     upper,
                 )
 
-            # Физический путь.
+            # Р¤РёР·РёС‡РµСЃРєРёР№ РїСѓС‚СЊ.
             if isinstance(lower, Quantity) != isinstance(upper, Quantity):
                 raise DimensionError(
-                    "Оба предела должны иметь одинаковый тип"
+                    "РћР±Р° РїСЂРµРґРµР»Р° РґРѕР»Р¶РЅС‹ РёРјРµС‚СЊ РѕРґРёРЅР°РєРѕРІС‹Р№ С‚РёРї"
                 )
 
             if isinstance(lower, Quantity):
                 if lower.dimension != upper.dimension:
                     raise DimensionError(
-                        "Размерности пределов интегрирования несовместимы"
+                        "Р Р°Р·РјРµСЂРЅРѕСЃС‚Рё РїСЂРµРґРµР»РѕРІ РёРЅС‚РµРіСЂРёСЂРѕРІР°РЅРёСЏ РЅРµСЃРѕРІРјРµСЃС‚РёРјС‹"
                     )
 
                 lower_value = float(lower.value)
@@ -852,7 +852,7 @@ class MathEngine:
                         integrand_dimension = result.dimension
                     elif integrand_dimension != result.dimension:
                         raise DimensionError(
-                            "Размерность подынтегрального выражения изменилась"
+                            "Р Р°Р·РјРµСЂРЅРѕСЃС‚СЊ РїРѕРґС‹РЅС‚РµРіСЂР°Р»СЊРЅРѕРіРѕ РІС‹СЂР°Р¶РµРЅРёСЏ РёР·РјРµРЅРёР»Р°СЃСЊ"
                         )
 
                     return float(result.value)
@@ -910,7 +910,14 @@ class MathEngine:
 
             values = list(values)
 
-            # Определяем, требуется ли физическое вычисление.
+            # ??????????? ????????????? ?????????? ??????????????.
+            symbolic_coordinate = variables.get(variable)
+            symbolic_coordinate_dimension = (
+                symbolic_coordinate.symbol_dimensions.get(symbol)
+                if isinstance(symbolic_coordinate, SymbolicQuantity)
+                else None
+            )
+
             has_quantity = any(
                 isinstance(variables.get(str(item)), Quantity)
                 for item in expression.free_symbols
@@ -926,7 +933,16 @@ class MathEngine:
                 or any(isinstance(value, Quantity) for value in values)
             )
 
-            if not (has_quantity or has_unit or has_quantity_coordinates):
+            has_symbolic_coordinate = (
+                symbolic_coordinate_dimension is not None
+            )
+
+            if not (
+                has_quantity
+                or has_unit
+                or has_quantity_coordinates
+                or has_symbolic_coordinate
+            ):
                 return numerical_cumulative_integral(
                     expression,
                     symbol,
@@ -939,7 +955,7 @@ class MathEngine:
                     },
                 )
 
-            # Определяем размерность координаты.
+            # ?????????? ??????????? ??????????.
             coordinate_quantities = [
                 value
                 for value in [start, *values]
@@ -949,13 +965,22 @@ class MathEngine:
             coordinate_dimension = (
                 coordinate_quantities[0].dimension
                 if coordinate_quantities
-                else None
+                else symbolic_coordinate_dimension
             )
+
+            if (
+                symbolic_coordinate_dimension is not None
+                and coordinate_dimension != symbolic_coordinate_dimension
+            ):
+                raise DimensionError(
+                    "??????????? ????????? ?? ????????? "
+                    "? ???????????? ????????????? ??????????"
+                )
 
             for value in coordinate_quantities:
                 if value.dimension != coordinate_dimension:
                     raise DimensionError(
-                        "Размерности координат интегрирования несовместимы"
+                        "??????????? ????????? ?????????????? ????????????"
                     )
 
             def numeric_value(value):
@@ -972,11 +997,10 @@ class MathEngine:
 
             if not np.all(np.isfinite(numeric_values)):
                 raise EvaluationError(
-                    "Массив содержит NaN или бесконечные значения"
+                    "?????? ???????? NaN ??? ??????????? ????????"
                 )
 
             grid = np.concatenate(([start_value], numeric_values))
-
             differences = np.diff(grid)
 
             if not (
@@ -984,11 +1008,9 @@ class MathEngine:
                 or np.all(differences <= 0)
             ):
                 raise EvaluationError(
-                    "Значения координаты должны идти в монотонном порядке"
+                    "???????? ?????????? ?????? ???? ? ?????????? ???????"
                 )
 
-            # Вычисляем подынтегральное выражение в начальной точке,
-            # чтобы определить его размерность даже для пустого массива.
             initial_variables = {
                 **variables,
                 variable: (
@@ -1011,7 +1033,6 @@ class MathEngine:
                 else None
             )
 
-            # Вычисляем выражение сразу для всего массива координат.
             local_variables = {
                 **variables,
                 variable: (
@@ -1034,7 +1055,7 @@ class MathEngine:
                     and result.dimension != integrand_dimension
                 ):
                     raise DimensionError(
-                        "Размерность выражения изменилась"
+                        "??????????? ????????? ??????????"
                     )
 
                 integrand_values = np.asarray(
@@ -1052,12 +1073,13 @@ class MathEngine:
 
             if not np.all(np.isfinite(integrand_values)):
                 raise EvaluationError(
-                    "Подынтегральная функция вернула NaN или бесконечность"
+                    "??????????????? ??????? ??????? NaN ??? ?????????????"
                 )
 
             if len(integrand_values) != len(grid):
                 raise EvaluationError(
-                    "Количество значений функции не совпадает с количеством координат"
+                    "?????????? ???????? ??????? ?? ????????? "
+                    "? ??????????? ?????????"
                 )
 
             integrated_values = cumulative_trapezoid(
@@ -1066,7 +1088,6 @@ class MathEngine:
                 initial=0.0,
             )
 
-            # Определяем размерность результата.
             result_dimension = integrand_dimension
 
             if coordinate_dimension is not None:
@@ -1090,15 +1111,10 @@ class MathEngine:
 
         except Exception as exc:
             raise EvaluationError(str(exc)) from exc
-
-    # -------------------------------------------------
-    # ИНФОРМАЦИЯ О ДВИЖКЕ
-    # -------------------------------------------------
-
     def get_variable(self, name):
         if not self.variables.has(name):
             raise EvaluationError(
-                f"Переменная '{name}' не найдена"
+                f"РџРµСЂРµРјРµРЅРЅР°СЏ '{name}' РЅРµ РЅР°Р№РґРµРЅР°"
             )
 
         return self.variables.get(name)
