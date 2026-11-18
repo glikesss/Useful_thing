@@ -502,7 +502,7 @@ class MathLabBridge:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    def render_plot_curves(self, curves, title=None):
+    def render_plot_curves(self, curves, title=None, legend_visible=True, legend_position="best"):
         """Render multiple dataset/column combinations on one set of axes."""
         manager = None
         try:
@@ -553,6 +553,7 @@ class MathLabBridge:
                 xlabel=labels_x[0] if len(set(labels_x)) == 1 else "X",
                 ylabel=labels_y[0] if len(set(labels_y)) == 1 else "Y",
             )
+            manager.set_legend(visible=legend_visible, position=legend_position)
 
             buffer = BytesIO()
             manager.figure.savefig(
@@ -574,7 +575,7 @@ class MathLabBridge:
             if manager is not None:
                 manager.close()
 
-    def render_plot_array_curves(self, curves, title=None):
+    def render_plot_array_curves(self, curves, title=None, legend_visible=True, legend_position="best"):
         """Render curves directly from named engine array variables."""
         manager = None
         try:
@@ -622,6 +623,7 @@ class MathLabBridge:
                 xlabel=labels_x[0] if len(set(labels_x)) == 1 else "X",
                 ylabel=labels_y[0] if len(set(labels_y)) == 1 else "Y",
             )
+            manager.set_legend(visible=legend_visible, position=legend_position)
             buffer = BytesIO()
             manager.figure.savefig(buffer, format="png", dpi=140, bbox_inches="tight")
             encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
