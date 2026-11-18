@@ -220,7 +220,7 @@ class ExpressionParser:
 
         # Keep explicitly declared local symbols intact.
         # Function calls are also preserved, including built-ins.
-        token_pattern = re.compile(r"\\b[A-Za-z]+\\b")
+        token_pattern = re.compile(r"\b[A-Za-z]+\b")
 
         def expand(match):
             name = match.group(0)
