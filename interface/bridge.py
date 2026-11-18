@@ -157,6 +157,7 @@ class MathLabBridge:
             variable = {
                 "name": name,
                 "value": self._format_value(value),
+                "imported": name in self.engine.external_variables,
             }
             if isinstance(value, np.ndarray):
                 flat = np.asarray(value).reshape(-1)
@@ -389,8 +390,26 @@ class MathLabBridge:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    @staticmethod
+    def _add_plot_curve(manager, frame, x_column, y_column, label, smoothing=None):
+        """Add a curve, optionally smoothing Y without modifying source data."""
+        plot_frame = frame
+        plot_y = y_column
+        if smoothing and smoothing.get("enabled"):
+            if not isinstance(smoothing, dict):
+                raise TypeError("Параметры сглаживания должны быть объектом")
+            method = smoothing.get("method", "moving_average")
+            window = smoothing.get("window", 5)
+            polyorder = smoothing.get("polyorder", 2)
+            plot_frame = smooth(
+                frame, y_column, window=window, method=method,
+                polyorder=polyorder, result_column="__mathlab_smoothed__",
+            )
+            plot_y = "__mathlab_smoothed__"
+        manager.add_curve(plot_frame, x_column, plot_y, label=label)
+
     def select_export_plot_file(self, title, plot_curves, file_format, source="csv",
-                                 legend_visible=True, legend_position="best"):
+                                 legend_visible=True, legend_position="best", smoothing=None):
         """Export the current plot directly from its Matplotlib Figure."""
         manager = None
         try:
@@ -423,9 +442,9 @@ class MathLabBridge:
                         frame = self.data_manager.get_data(dataset_name)
                     if x_column not in frame.columns or y_column not in frame.columns:
                         raise KeyError(f"Не найдены столбцы {x_column}, {y_column}")
-                    manager.add_curve(
-                        frame, x_column, y_column,
-                        label=spec.get("label") or f"{dataset_name}: {y_column}",
+                    self._add_plot_curve(
+                        manager, frame, x_column, y_column,
+                        spec.get("label") or f"{dataset_name}: {y_column}", smoothing,
                     )
                     labels_x.append(str(x_column))
                     labels_y.append(str(y_column))
@@ -443,9 +462,9 @@ class MathLabBridge:
                             raise ValueError("Массивы X и Y должны иметь одинаковую длину не менее 2")
                         if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
                             raise ValueError("Массивы содержат нечисловые значения")
-                        manager.add_curve(
-                            pd.DataFrame({"x": x, "y": y}), "x", "y",
-                            label=spec.get("label") or f"{y_name}({x_name})",
+                        self._add_plot_curve(
+                            manager, pd.DataFrame({"x": x, "y": y}), "x", "y",
+                            spec.get("label") or f"{y_name}({x_name})", smoothing,
                         )
                         labels_x.append(x_name)
                         labels_y.append(y_name)
@@ -660,7 +679,7 @@ class MathLabBridge:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    def render_plot_curves(self, curves, title=None, legend_visible=True, legend_position="best"):
+    def render_plot_curves(self, curves, title=None, legend_visible=True, legend_position="best", smoothing=None):
         """Render multiple dataset/column combinations on one set of axes."""
         manager = None
         try:
@@ -698,11 +717,9 @@ class MathLabBridge:
                 if y_column not in frame.columns:
                     raise KeyError(f"Не найден столбец: {y_column}")
 
-                manager.add_curve(
-                    frame,
-                    x_column,
-                    y_column,
-                    label=label or f"{dataset_name}: {y_column}",
+                self._add_plot_curve(
+                    manager, frame, x_column, y_column,
+                    label or f"{dataset_name}: {y_column}", smoothing,
                 )
                 labels_x.append(str(x_column))
                 labels_y.append(str(y_column))
@@ -733,7 +750,7 @@ class MathLabBridge:
             if manager is not None:
                 manager.close()
 
-    def render_plot_array_curves(self, curves, title=None, legend_visible=True, legend_position="best"):
+    def render_plot_array_curves(self, curves, title=None, legend_visible=True, legend_position="best", smoothing=None):
         """Render curves directly from named engine array variables."""
         manager = None
         try:
@@ -773,7 +790,7 @@ class MathLabBridge:
                         raise ValueError(f"Массивы '{x_name}' и '{y_name}' содержат нечисловые значения")
                     frame = pd.DataFrame({"x": x, "y": y})
                     label = spec.get("label") or f"{y_name}({x_name})"
-                    manager.add_curve(frame, "x", "y", label=label)
+                    self._add_plot_curve(manager, frame, "x", "y", label, smoothing)
                     labels_x.append(x_name)
                     labels_y.append(y_name)
 
