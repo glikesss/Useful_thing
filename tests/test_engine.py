@@ -220,9 +220,9 @@ def test_range_can_define_array_variable():
 
 def test_range_rejects_zero_step_and_non_integer_arguments():
     engine = MathEngine()
-    with pytest.raises(Exception):
+    with pytest.raises(EvaluationError):
         engine.evaluate("range(1, 5, 0)")
-    with pytest.raises(Exception):
+    with pytest.raises(EvaluationError):
         engine.evaluate("range(1, 5.5)")
 
 
