@@ -387,6 +387,23 @@ footer {
 }
 .formula-row-result.error { color: var(--danger, #d65b5b); }
 
+.imported-array-row {
+    grid-template-columns: 25px minmax(0, 1fr);
+}
+.imported-array-expression {
+    min-width: 0;
+    padding: 9px 11px;
+    overflow-x: auto;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    color: var(--text);
+    background: rgba(5, 13, 25, .24);
+    font: 14px/1.5 Consolas, monospace;
+    white-space: nowrap;
+}
+.imported-array-row .formula-row-result {
+    grid-column: 2;
+}
 .formula-row-result.array-preview {
     display: block;
     padding: 7px 10px;
