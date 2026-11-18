@@ -233,6 +233,18 @@ def test_bridge_processes_dataset_without_modifying_source(tmp_path):
     assert bridge.data_manager.get_data("signal_derivative")["d_value_d_time"].tolist() == [2.0, 2.0, 2.0]
 
 
+def test_bridge_derivative_requires_x_column(tmp_path):
+    path = tmp_path / "signal.csv"
+    path.write_text("time,value\n0,0\n1,2\n2,6\n", encoding="utf-8")
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "signal")
+
+    response = bridge.process_dataset("signal", "derivative", "value")
+
+    assert response["ok"] is False
+    assert response["error"] == "Выберите столбец X"
+
+
 def test_bridge_integrates_dataset(tmp_path):
     path = tmp_path / "signal.csv"
     path.write_text("time,value\n0,0\n1,2\n2,4\n", encoding="utf-8")
