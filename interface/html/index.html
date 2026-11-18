@@ -234,6 +234,21 @@
                     </select>
                 </label>
             </div>
+            <div class="legend-controls plot-smoothing-controls">
+                <label class="legend-toggle">
+                    <input id="plot-smoothing-enabled" type="checkbox">
+                    Сглаживать график
+                </label>
+                <label>Метод
+                    <select id="plot-smoothing-method" disabled>
+                        <option value="moving_average">Скользящее среднее</option>
+                        <option value="savgol">Савицкий — Голея</option>
+                    </select>
+                </label>
+                <label>Окно
+                    <input id="plot-smoothing-window" type="number" min="3" step="2" value="5" disabled>
+                </label>
+            </div>
             <div class="plot-container">
                 <div id="plot-placeholder">
                     Загрузите CSV и выберите столбцы для построения графика
