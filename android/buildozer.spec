@@ -4,7 +4,7 @@ package.name = mathlab
 package.domain = org.glikesss
 source.dir = ..
 source.include_exts = py,png,jpg,kv,atlas,html,css,js,jar
-source.exclude_dirs = .git,.venv,venv,tests,__pycache__,.pytest_cache,bin,dist,build
+source.exclude_dirs = .git,.venv,.venv-android,venv,tests,__pycache__,.pytest_cache,bin,dist,build,android/bin,android/.buildozer
 version = 0.1.0
 
 requirements = python3,android,pyjnius,pywebview,bottle,proxy_tools,typing_extensions,sympy,numpy,scipy,pandas,matplotlib,openpyxl
