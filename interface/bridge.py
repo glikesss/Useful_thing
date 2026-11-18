@@ -389,26 +389,81 @@ class MathLabBridge:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    def select_export_plot_file(self, title, image_data, file_format):
-        """Save the currently displayed plot image as PNG or PDF."""
+    def select_export_plot_file(self, title, plot_curves, file_format, source="csv",
+                                 legend_visible=True, legend_position="best"):
+        """Export the current plot directly from its Matplotlib Figure."""
+        manager = None
         try:
-            if not isinstance(image_data, str) or not image_data.startswith("data:image/png;base64,"):
-                raise ValueError("Сначала постройте график")
             formats = {
                 "png": ("PNG image (*.png)", ".png"),
                 "pdf": ("PDF document (*.pdf)", ".pdf"),
             }
             if file_format not in formats:
                 raise ValueError("Неподдерживаемый формат экспорта графика")
+            if not isinstance(plot_curves, list) or not plot_curves:
+                raise ValueError("Сначала добавьте кривые на график")
+            if source not in ("csv", "array"):
+                raise ValueError("Неизвестный источник данных графика")
+
+            manager = PlotManager(
+                title=title or "MathLab plot",
+                xlabel="X",
+                ylabel="Y",
+            )
+            labels_x = []
+            labels_y = []
+            if source == "csv":
+                for spec in plot_curves:
+                    dataset_name = spec.get("dataset_name")
+                    x_column = spec.get("x_column")
+                    y_column = spec.get("y_column")
+                    if not dataset_name or not x_column or not y_column:
+                        raise ValueError("Для кривой нужны набор данных, X и Y")
+                    with self._lock:
+                        frame = self.data_manager.get_data(dataset_name)
+                    if x_column not in frame.columns or y_column not in frame.columns:
+                        raise KeyError(f"Не найдены столбцы {x_column}, {y_column}")
+                    manager.add_curve(
+                        frame, x_column, y_column,
+                        label=spec.get("label") or f"{dataset_name}: {y_column}",
+                    )
+                    labels_x.append(str(x_column))
+                    labels_y.append(str(y_column))
+            else:
+                with self._lock:
+                    variables = self.engine.variables.as_dict()
+                    for spec in plot_curves:
+                        x_name, y_name = spec.get("x_name"), spec.get("y_name")
+                        x, y = variables.get(x_name), variables.get(y_name)
+                        if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
+                            raise ValueError(f"'{x_name}' и '{y_name}' должны быть массивами")
+                        x = np.asarray(x, dtype=float).reshape(-1)
+                        y = np.asarray(y, dtype=float).reshape(-1)
+                        if len(x) != len(y) or len(x) < 2:
+                            raise ValueError("Массивы X и Y должны иметь одинаковую длину не менее 2")
+                        if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
+                            raise ValueError("Массивы содержат нечисловые значения")
+                        manager.add_curve(
+                            pd.DataFrame({"x": x, "y": y}), "x", "y",
+                            label=spec.get("label") or f"{y_name}({x_name})",
+                        )
+                        labels_x.append(x_name)
+                        labels_y.append(y_name)
+
+            manager.set_labels(
+                xlabel=labels_x[0] if len(set(labels_x)) == 1 else "X",
+                ylabel=labels_y[0] if len(set(labels_y)) == 1 else "Y",
+            )
+            manager.set_legend(visible=legend_visible, position=legend_position)
+
             if self._window is None:
                 raise RuntimeError("Окно приложения ещё не создано")
             import webview
-            dialog_type = webview.FileDialog.SAVE if hasattr(webview, "FileDialog") else webview.SAVE_DIALOG
             file_type, extension = formats[file_format]
-            safe_title = (str(title or "График").strip() or "График")
+            dialog_type = webview.FileDialog.SAVE if hasattr(webview, "FileDialog") else webview.SAVE_DIALOG
             selected = self._window.create_file_dialog(
                 dialog_type,
-                save_filename=f"{safe_title}{extension}",
+                save_filename=f"{str(title or 'График').strip() or 'График'}{extension}",
                 file_types=(file_type,),
             )
             if not selected:
@@ -417,22 +472,18 @@ class MathLabBridge:
             path = Path(selected_path)
             if path.suffix.lower() != extension:
                 path = path.with_suffix(extension)
-            image_bytes = base64.b64decode(image_data.split(",", 1)[1], validate=True)
-            if file_format == "png":
-                path.write_bytes(image_bytes)
-            else:
-                import matplotlib.pyplot as plt
-                from PIL import Image
-                image = Image.open(BytesIO(image_bytes)).convert("RGB")
-                figure, axis = plt.subplots(figsize=(image.width / 140, image.height / 140))
-                axis.imshow(image)
-                axis.axis("off")
-                figure.subplots_adjust(0, 0, 1, 1)
-                figure.savefig(path, format="pdf", bbox_inches="tight", pad_inches=0)
-                plt.close(figure)
-            return {"ok": True, "path": str(path), "message": f"График сохранён: {path.name}"}
+
+            manager.figure.savefig(path, format=file_format, dpi=300, bbox_inches="tight")
+            return {
+                "ok": True,
+                "path": str(path),
+                "message": f"График сохранён: {path.name}",
+            }
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
+        finally:
+            if manager is not None:
+                manager.close()
 
     def select_export_table_file(self, name, file_format):
         """Open a native save dialog for Excel export."""
