@@ -11,6 +11,8 @@ let formulaApplyTimer = null;
 let formulaApplyRequest = 0;
 let expressionTimer = null;
 let expressionRequest = 0;
+let activeFormulaInput = null;
+let plotViewport = {scale: 1, x: 0, y: 0};
 
 function setMessage(id, message, type = "") {
     const element = byId(id);
@@ -96,6 +98,7 @@ function renderFormulaEditor(lines = [], formulas = []) {
         input.setAttribute("math-virtual-keyboard-policy", "manual");
         input.setAttribute("smart-mode", "");
         input.setAttribute("placeholder", "Введите формулу…");
+        input.addEventListener("focus", () => { activeFormulaInput = input; });
         input.value = formulaSourceToLatex(line);
 
         input.addEventListener("input", () => scheduleFormulaApply());
@@ -479,6 +482,7 @@ function activatePlotGraph(id) {
     const image = byId("plot-image");
     if (graph.image) {
         image.src = graph.image;
+        resetPlotViewport();
         image.hidden = false;
         byId("export-plot-png").disabled = false;
         byId("export-plot-pdf").disabled = false;
@@ -1058,6 +1062,7 @@ async function renderPlot() {
         }
 
         byId("plot-image").src = response.image;
+        resetPlotViewport();
         byId("plot-image").hidden = false;
         renderPlotApproximations(response.approximations || []);
         byId("export-plot-png").disabled = false;
@@ -1135,6 +1140,134 @@ function updatePlotSmoothingControls() {
     byId("plot-smoothing-window").disabled = !enabled;
 }
 
+
+function insertFormulaKey(latex) {
+    const target = activeFormulaInput || byId("formula-editor-list").querySelector(".formula-row-input");
+    if (!target) return;
+    target.focus();
+    if (typeof target.insert === "function") {
+        target.insert(latex, {insertionMode: "replaceSelection"});
+    } else {
+        target.value += latex;
+    }
+    scheduleFormulaApply();
+}
+
+function initializeFormulaKeyboard() {
+    const keyboard = byId("formula-keyboard");
+    const toggle = byId("toggle-formula-keyboard");
+    const isCompact = window.matchMedia("(max-width: 760px)").matches;
+    keyboard.hidden = !isCompact;
+    toggle.setAttribute("aria-expanded", String(isCompact));
+    toggle.addEventListener("click", () => {
+        keyboard.hidden = !keyboard.hidden;
+        toggle.setAttribute("aria-expanded", String(!keyboard.hidden));
+    });
+    keyboard.addEventListener("click", event => {
+        const key = event.target.closest("button");
+        if (!key) return;
+        const target = activeFormulaInput || byId("formula-editor-list").querySelector(".formula-row-input");
+        if (!target) return;
+        target.focus();
+        const action = key.dataset.action;
+        if (action === "backspace") {
+            target.executeCommand?.("deleteBackward");
+        } else if (action === "undo") {
+            target.executeCommand?.("undo");
+        } else if (action === "clear") {
+            target.value = "";
+        } else if (key.dataset.latex) {
+            insertFormulaKey(key.dataset.latex);
+        }
+        scheduleFormulaApply();
+    });
+}
+
+function applyPlotViewport() {
+    const image = byId("plot-image");
+    image.style.transform = `translate(${plotViewport.x}px, ${plotViewport.y}px) scale(${plotViewport.scale})`;
+}
+
+function resetPlotViewport() {
+    plotViewport = {scale: 1, x: 0, y: 0};
+    applyPlotViewport();
+}
+
+function initializePlotGestures() {
+    const surface = byId("plot-container");
+    const image = byId("plot-image");
+    const pointers = new Map();
+    let gesture = null;
+    let lastTap = 0;
+
+    surface.addEventListener("pointerdown", event => {
+        if (image.hidden) return;
+        surface.setPointerCapture(event.pointerId);
+        pointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+        if (pointers.size === 1) {
+            gesture = {kind: "pan", x: event.clientX, y: event.clientY,
+                originX: plotViewport.x, originY: plotViewport.y};
+        } else if (pointers.size === 2) {
+            const points = [...pointers.values()];
+            gesture = {
+                kind: "pinch",
+                distance: Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y),
+                centerX: (points[0].x + points[1].x) / 2,
+                centerY: (points[0].y + points[1].y) / 2,
+                scale: plotViewport.scale, x: plotViewport.x, y: plotViewport.y,
+            };
+        }
+        event.preventDefault();
+    });
+
+    surface.addEventListener("pointermove", event => {
+        if (!pointers.has(event.pointerId) || !gesture) return;
+        pointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+        if (gesture.kind === "pan" && pointers.size === 1) {
+            plotViewport.x = gesture.originX + event.clientX - gesture.x;
+            plotViewport.y = gesture.originY + event.clientY - gesture.y;
+        } else if (gesture.kind === "pinch" && pointers.size >= 2) {
+            const points = [...pointers.values()];
+            const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+            const centerX = (points[0].x + points[1].x) / 2;
+            const centerY = (points[0].y + points[1].y) / 2;
+            plotViewport.scale = Math.min(6, Math.max(0.7, gesture.scale * distance / Math.max(1, gesture.distance)));
+            plotViewport.x = gesture.x + centerX - gesture.centerX;
+            plotViewport.y = gesture.y + centerY - gesture.centerY;
+        }
+        applyPlotViewport();
+        event.preventDefault();
+    });
+
+    const finish = event => {
+        if (!pointers.has(event.pointerId)) return;
+        pointers.delete(event.pointerId);
+        if (pointers.size === 1) {
+            const remaining = [...pointers.values()][0];
+            gesture = {kind: "pan", x: remaining.x, y: remaining.y,
+                originX: plotViewport.x, originY: plotViewport.y};
+        } else {
+            gesture = null;
+        }
+        const now = Date.now();
+        if (now - lastTap < 320) resetPlotViewport();
+        lastTap = now;
+    };
+    surface.addEventListener("pointerup", finish);
+    surface.addEventListener("pointercancel", finish);
+    surface.addEventListener("dblclick", event => {
+        event.preventDefault();
+        resetPlotViewport();
+    });
+    surface.addEventListener("wheel", event => {
+        if (image.hidden) return;
+        event.preventDefault();
+        const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+        plotViewport.scale = Math.min(6, Math.max(0.7, plotViewport.scale * factor));
+        applyPlotViewport();
+    }, {passive: false});
+}
+
 async function initialize() {
     if (api) return;
     api = window.pywebview.api;
@@ -1147,6 +1280,9 @@ async function initialize() {
         console.error(error);
     }
 }
+
+initializeFormulaKeyboard();
+initializePlotGestures();
 
 byId("apply-formulas").addEventListener("click", applyFormulas);
 byId("clear-formulas").addEventListener("click", async () => {
