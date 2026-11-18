@@ -745,7 +745,7 @@ async function applyFormulas(automatic = false) {
         }
 
         renderState(response.state, false, true);
-        const rows = Array.from(document.querySelectorAll(".formula-row"))
+        const rows = Array.from(document.querySelectorAll(".formula-row:not(.imported-array-row)"))
             .filter(row => formulaMathToSource(row.querySelector(".formula-row-input")));
         let expressionIndex = 0;
 
