@@ -122,6 +122,20 @@ class MathLabBridge:
         with self._lock:
             return self._build_state()
 
+    def preview_formula(self, source):
+        """Preview one formula without applying or changing engine state."""
+        try:
+            if not isinstance(source, str) or not source.strip():
+                raise ValueError("Введите формулу")
+            with self._lock:
+                parsed = self.engine.parser.parse_definition(source.strip())
+                mathml = self._expression_mathml(parsed.definition.expression)
+            if not mathml:
+                raise ValueError("Не удалось построить математическое представление")
+            return {"ok": True, "mathml": mathml}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     def set_lines(self, lines):
         try:
             if not isinstance(lines, (list, tuple)):
