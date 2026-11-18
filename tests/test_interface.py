@@ -3,6 +3,7 @@ from io import BytesIO
 import matplotlib
 matplotlib.use("Agg", force=True)
 
+import numpy as np
 import pandas as pd
 
 from interface.bridge import MathLabBridge
