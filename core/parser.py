@@ -1,5 +1,7 @@
 import ast
 import re
+
+import numpy as np
 from dataclasses import dataclass, field
 
 import sympy as sp
@@ -199,7 +201,14 @@ class _ExpressionConverter:
         self.functions = functions
         self.local_symbols = local_symbols
 
-    
+    @staticmethod
+    def _array_operation(operation, left, right):
+        try:
+            with np.errstate(invalid="raise", divide="raise", over="raise"):
+                return operation(left, right)
+        except (TypeError, ValueError, FloatingPointError) as exc:
+            raise ParseError(f"Ошибка операции с массивами: {exc}") from exc
+
     def convert(self, node):
         if isinstance(node, ast.Constant):
             if isinstance(node.value, bool):
@@ -222,25 +231,37 @@ class _ExpressionConverter:
 
             return sp.Symbol(node.id)
 
+        if isinstance(node, ast.List | ast.Tuple):
+            if not node.elts:
+                raise ParseError("Массив не может быть пустым")
+            values = [self.convert(item) for item in node.elts]
+            try:
+                result = np.asarray(values, dtype=object)
+            except (TypeError, ValueError) as exc:
+                raise ParseError("Массив должен быть прямоугольным") from exc
+            if result.ndim != 1:
+                raise ParseError("Пока поддерживаются только одномерные массивы")
+            return result
+
         if isinstance(node, ast.BinOp):
             left = self.convert(node.left)
             right = self.convert(node.right)
 
             operations = {
-                ast.Add: lambda: left + right,
-                ast.Sub: lambda: left - right,
-                ast.Mult: lambda: left * right,
-                ast.Div: lambda: left / right,
-                ast.Pow: lambda: left ** right,
-                ast.Mod: lambda: left % right,
+                ast.Add: np.add,
+                ast.Sub: np.subtract,
+                ast.Mult: np.multiply,
+                ast.Div: np.divide,
+                ast.Pow: np.power,
+                ast.Mod: np.remainder,
             }
-
             operation = operations.get(type(node.op))
-
             if operation is None:
                 raise ParseError("Неподдерживаемая операция")
 
-            return operation()
+            if isinstance(left, np.ndarray) or isinstance(right, np.ndarray):
+                return self._array_operation(operation, left, right)
+            return operation(left, right)
 
         if isinstance(node, ast.UnaryOp):
             value = self.convert(node.operand)
@@ -249,7 +270,7 @@ class _ExpressionConverter:
                 return value
 
             if isinstance(node.op, ast.USub):
-                return -value
+                return np.negative(value) if isinstance(value, np.ndarray) else -value
 
             raise ParseError("Неподдерживаемая унарная операция")
 
@@ -338,8 +359,18 @@ class _ExpressionConverter:
                     raise ParseError("Именованные аргументы не поддерживаются")
 
                 try:
+                    if any(isinstance(arg, np.ndarray) for arg in args):
+                        numpy_functions = {
+                            "sin": np.sin, "cos": np.cos, "tan": np.tan,
+                            "asin": np.arcsin, "acos": np.arccos,
+                            "atan": np.arctan, "sinh": np.sinh,
+                            "cosh": np.cosh, "tanh": np.tanh,
+                            "sqrt": np.sqrt, "abs": np.abs,
+                            "ln": np.log, "log": np.log10, "exp": np.exp,
+                        }
+                        return numpy_functions[name](*args)
                     return BUILTIN_FUNCTIONS[name](*args)
-                except TypeError as exc:
+                except (TypeError, ValueError, FloatingPointError) as exc:
                     raise ParseError(str(exc)) from exc
 
             if name in self.functions:
