@@ -873,6 +873,25 @@ function renderTablePlaceholder(message) {
     container.appendChild(placeholder);
 }
 
+async function exportTable(fileFormat) {
+    const name = byId("table-dataset").value;
+    if (!name) {
+        setMessage("table-message", "Выберите набор данных", "error");
+        return;
+    }
+    try {
+        const response = await api.select_export_table_file(name, fileFormat);
+        if (response.cancelled) return;
+        if (!response.ok) {
+            setMessage("table-message", response.error, "error");
+            return;
+        }
+        setMessage("table-message", response.message, "success");
+    } catch (error) {
+        setMessage("table-message", error.message, "error");
+    }
+}
+
 async function refreshTable() {
     const name = byId("table-dataset").value;
     if (!name) {
@@ -1025,6 +1044,13 @@ byId("plot-title").addEventListener("input", () => {
 renderPlotTabs();
 byId("table-dataset").addEventListener("change", refreshTable);
 byId("refresh-table").addEventListener("click", refreshTable);
+byId("export-table-png").addEventListener("click", () => exportTable("png"));
+byId("export-table-pdf").addEventListener("click", () => exportTable("pdf"));
+byId("export-table-xlsx").addEventListener("click", () => exportTable("xlsx"));
+byId("table-dataset").addEventListener("change", () => {
+    const enabled = Boolean(byId("table-dataset").value);
+    for (const id of ["export-table-png", "export-table-pdf", "export-table-xlsx"]) byId(id).disabled = !enabled;
+});
 
 window.addEventListener("pywebviewready", initialize);
 if (window.pywebview?.api) initialize();
