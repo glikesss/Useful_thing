@@ -21,5 +21,5 @@ def test_spaced_adjacent_letters_are_implicit_multiplication():
 
 def test_latex_cdot_is_implicit_multiplication():
     engine = MathEngine()
-    engine.set_lines(["a=3", String.raw`result=a\\cdot a`])
+    engine.set_lines(["a=3", String.raw`result=a\cdot a`])
     assert engine.get_variable("result") == 9
