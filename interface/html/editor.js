@@ -566,6 +566,7 @@ function renderDatasets(datasets) {
         tableSelect.disabled = true;
         byId("refresh-table").disabled = true;
         updatePlotColumns();
+        updatePlotGroupControls();
         renderCurveList();
         renderTablePlaceholder("Загрузите CSV для просмотра таблицы");
         return;
@@ -711,6 +712,7 @@ async function applyFormulas(automatic = false) {
                 result.textContent = error.message;
                 result.hidden = false;
                 result.classList.add("error");
+                result.closest(".formula-row")?.classList.add("has-error");
             }
         }
 
