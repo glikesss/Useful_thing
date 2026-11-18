@@ -215,6 +215,52 @@ def test_bridge_renders_multiple_curves(tmp_path):
     assert response["image"].startswith("data:image/png;base64,")
 
 
+
+def test_bridge_processes_dataset_without_modifying_source(tmp_path):
+    path = tmp_path / "signal.csv"
+    path.write_text("time,value\\n0,0\\n1,2\\n2,4\\n", encoding="utf-8")
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "signal")
+
+    response = bridge.process_dataset(
+        "signal", "derivative", "value", {"x_column": "time"}
+    )
+
+    assert response["ok"] is True
+    assert response["dataset_name"] == "signal_derivative"
+    assert "signal_derivative" in [item["name"] for item in response["state"]["datasets"]]
+    assert bridge.data_manager.get_data("signal")["value"].tolist() == [0, 2, 4]
+    assert bridge.data_manager.get_data("signal_derivative")["d_value_d_time"].tolist() == [2.0, 2.0, 2.0]
+
+
+def test_bridge_integrates_dataset(tmp_path):
+    path = tmp_path / "signal.csv"
+    path.write_text("time,value\\n0,0\\n1,2\\n2,4\\n", encoding="utf-8")
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "signal")
+
+    response = bridge.process_dataset(
+        "signal", "integrate", "value", {"x_column": "time"}
+    )
+
+    assert response["ok"] is True
+    assert float(response["result"]) == 4.0
+
+
+def test_bridge_calculates_statistics(tmp_path):
+    path = tmp_path / "signal.csv"
+    path.write_text("time,value\\n0,1\\n1,3\\n", encoding="utf-8")
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "signal")
+
+    response = bridge.process_dataset("signal", "statistics")
+
+    assert response["ok"] is True
+    assert "mean" in response["result"]
+    assert "2.0" in response["result"]
+
+
+
 def test_bridge_rejects_empty_curve_list():
     bridge = MathLabBridge()
 
