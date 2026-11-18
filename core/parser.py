@@ -250,6 +250,14 @@ class _ExpressionConverter:
                 raise ParseError("Пока поддерживаются только одномерные массивы")
             return result
 
+        if isinstance(node, ast.Subscript):
+            if not isinstance(node.value, ast.Name):
+                raise ParseError("Индексировать можно только массив-переменную")
+            if isinstance(node.slice, ast.Slice):
+                raise ParseError("Срезы массивов пока не поддерживаются")
+            index = self.convert(node.slice)
+            return sp.IndexedBase(node.value.id)[index - 1]
+
         if isinstance(node, ast.BinOp):
             left = self.convert(node.left)
             right = self.convert(node.right)
