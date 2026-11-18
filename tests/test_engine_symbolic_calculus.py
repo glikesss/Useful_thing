@@ -52,3 +52,28 @@ def test_definite_integrate_symbolic_quantity_with_physical_bounds():
     assert isinstance(result, SymbolicQuantity)
     assert result.expression == 2
     assert result.dimension == LENGTH**2
+
+
+
+def test_symbolic_quantity_with_physical_constant():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", TIME)
+    engine.variables.set("a", Quantity(5, LENGTH))
+
+    result = engine.evaluate("a*x")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == 5 * sp.Symbol("x")
+    assert result.dimension == LENGTH * TIME
+
+
+def test_symbolic_quantity_divided_by_physical_constant():
+    engine = MathEngine()
+    engine.set_symbolic_variable("x", "x", LENGTH)
+    engine.variables.set("a", Quantity(2, TIME))
+
+    result = engine.evaluate("x/a")
+
+    assert isinstance(result, SymbolicQuantity)
+    assert result.expression == sp.Symbol("x") / 2
+    assert result.dimension == LENGTH / TIME

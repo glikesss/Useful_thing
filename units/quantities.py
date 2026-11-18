@@ -400,6 +400,13 @@ class SymbolicQuantity:
         return other.__sub__(self)
 
     def __mul__(self, other):
+        if isinstance(other, Quantity):
+            return SymbolicQuantity(
+                self.expression * sp.sympify(other.value),
+                self.dimension * other.dimension,
+                self.symbol_dimensions,
+            )
+
         if isinstance(other, SymbolicQuantity):
             dimensions = self._merge_dimensions(
                 self.symbol_dimensions,
@@ -422,6 +429,13 @@ class SymbolicQuantity:
         return self.__mul__(other)
 
     def __truediv__(self, other):
+        if isinstance(other, Quantity):
+            return SymbolicQuantity(
+                self.expression / sp.sympify(other.value),
+                self.dimension / other.dimension,
+                self.symbol_dimensions,
+            )
+
         if isinstance(other, SymbolicQuantity):
             dimensions = self._merge_dimensions(
                 self.symbol_dimensions,
@@ -441,6 +455,13 @@ class SymbolicQuantity:
         )
 
     def __rtruediv__(self, other):
+        if isinstance(other, Quantity):
+            return SymbolicQuantity(
+                sp.sympify(other.value) / self.expression,
+                other.dimension / self.dimension,
+                self.symbol_dimensions,
+            )
+
         return SymbolicQuantity(
             sp.sympify(other) / self.expression,
             DIMENSIONLESS / self.dimension,
