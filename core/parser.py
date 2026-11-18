@@ -434,4 +434,20 @@ class _ExpressionConverter:
             for name, value in values.items()
         }
 
+        if any(isinstance(value, np.ndarray) for value in values.values()):
+            expression_symbols = sorted(
+                definition.expression.free_symbols,
+                key=str,
+            )
+            function = sp.lambdify(
+                expression_symbols,
+                definition.expression,
+                modules=["numpy", "math"],
+            )
+            arguments = [
+                values.get(str(symbol), symbol)
+                for symbol in expression_symbols
+            ]
+            return function(*arguments)
+
         return definition.expression.subs(substitutions)
