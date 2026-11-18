@@ -53,7 +53,7 @@ def _evaluate_expression(expression, variables):
             })
             if not index_expr.is_integer or not index_expr.is_number:
                 raise EvaluationError("Индекс массива должен быть целым числом")
-            index = int(index_expr) - 1
+            index = int(index_expr)
             if index < 0 or index >= len(array):
                 raise EvaluationError(
                     f"Индекс {index + 1} вне диапазона массива '{name}'"
@@ -348,7 +348,7 @@ class MathEngine:
         global_values = {
             sp.Symbol(name): value
             for name, value in self.variables.as_dict().items()
-            if not isinstance(value, (Quantity, SymbolicQuantity))
+            if not isinstance(value, (Quantity, SymbolicQuantity, np.ndarray))
         }
 
         known_globals = {
