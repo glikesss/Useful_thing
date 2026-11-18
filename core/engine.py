@@ -132,6 +132,7 @@ class MathEngine:
         self.parser = ExpressionParser()
         self.variables = VariableStore()
         self.symbolic_variables = {}
+        self.external_variables = {}
         self.definitions = {}
         self.functions = {}
         self.compiled_functions = {}
@@ -271,7 +272,7 @@ class MathEngine:
             graph[name] = dependencies
 
         order = topological_sort(graph)
-        resolved = {}
+        resolved = dict(self.external_variables)
 
         for name in order:
             definition = variable_definitions[name]
@@ -1204,6 +1205,21 @@ class MathEngine:
 
         except Exception as exc:
             raise EvaluationError(str(exc)) from exc
+    def set_external_variable(self, name, value):
+        """Register an externally supplied value that survives formula rebuilds."""
+        old_value = self.external_variables.get(name)
+        existed = name in self.external_variables
+        self.external_variables[name] = value
+        try:
+            self._rebuild()
+        except Exception:
+            if existed:
+                self.external_variables[name] = old_value
+            else:
+                self.external_variables.pop(name, None)
+            self._rebuild()
+            raise
+
     def get_variable(self, name):
         if not self.variables.has(name):
             raise EvaluationError(
