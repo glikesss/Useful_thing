@@ -1081,7 +1081,7 @@ byId("export-plot-pdf").addEventListener("click", () => exportPlot("pdf"));
 byId("export-table-xlsx").addEventListener("click", () => exportTable("xlsx"));
 byId("table-dataset").addEventListener("change", () => {
     const enabled = Boolean(byId("table-dataset").value);
-    for (const id of ["export-table-png", "export-table-pdf", "export-table-xlsx"]) byId(id).disabled = !enabled;
+    byId("export-table-xlsx").disabled = !enabled;
 });
 
 window.addEventListener("pywebviewready", initialize);
