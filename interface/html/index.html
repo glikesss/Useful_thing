@@ -167,6 +167,28 @@
                 </button>
             </div>
 
+            <div class="plot-controls">
+                <label>
+                    Массив X
+                    <select id="plot-array-x" disabled>
+                        <option value="">Нет массивов</option>
+                    </select>
+                </label>
+                <label>
+                    Массив Y
+                    <select id="plot-array-y" disabled>
+                        <option value="">Нет массивов</option>
+                    </select>
+                </label>
+                <label>
+                    Подпись кривой
+                    <input id="plot-array-label" type="text" placeholder="Например: y(x)">
+                </label>
+                <button class="button secondary plot-button" id="add-array-curve" disabled>
+                    + Добавить кривую из массивов
+                </button>
+            </div>
+
             <div class="curve-toolbar">
                 <div id="plot-curves-list" class="curve-list empty">Кривые не добавлены</div>
                 <div class="plot-title-control">
