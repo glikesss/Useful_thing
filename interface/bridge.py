@@ -434,7 +434,39 @@ class MathLabBridge:
         r_squared = 1.0 if total == 0 and residual == 0 else (0.0 if total == 0 else 1 - residual / total)
         x_fit = np.linspace(float(np.min(x)), float(np.max(x)), 300)
         y_fit = predict(x_fit)
-        return pd.DataFrame({x_column: x_fit, "__mathlab_fit__": y_fit}), r_squared
+
+        def number(value):
+            return f"{float(value):.6g}"
+
+        def signed_term(value, expression):
+            sign = " + " if value >= 0 else " - "
+            return sign + number(abs(value)) + expression
+
+        if model in ("linear", "polynomial"):
+            terms = []
+            power = len(coefficients) - 1
+            for index, coefficient in enumerate(coefficients):
+                exponent = power - index
+                if abs(coefficient) < 1e-12:
+                    continue
+                variable = "" if exponent == 0 else ("x" if exponent == 1 else f"x^{exponent}")
+                if not terms:
+                    terms.append(("-" if coefficient < 0 else "") + number(abs(coefficient)) + variable)
+                else:
+                    terms.append(signed_term(coefficient, variable))
+            formula = "y = " + ("".join(terms) if terms else "0")
+        elif model == "exponential":
+            amplitude = float(np.exp(coefficients[1]))
+            formula = f"y = {number(amplitude)}·e^({number(coefficients[0])}·x)"
+        elif model == "logarithmic":
+            formula = f"y = {number(coefficients[0])}·ln(x)" + signed_term(coefficients[1], "")
+        else:
+            amplitude = float(np.exp(coefficients[1]))
+            formula = f"y = {number(amplitude)}·x^{number(coefficients[0])}"
+
+        fit_frame = pd.DataFrame({x_column: x_fit, "__mathlab_fit__": y_fit})
+        fit_frame.attrs["formula"] = formula
+        return fit_frame, r_squared
 
     @staticmethod
     def _add_plot_curve(manager, frame, x_column, y_column, label, smoothing=None, approximation=None):
@@ -461,6 +493,12 @@ class MathLabBridge:
                 fit_frame, x_column, "__mathlab_fit__",
                 label=f"{label} — аппроксимация (R²={r_squared:.4f})",
             )
+            return {
+                "label": label,
+                "formula": fit_frame.attrs["formula"],
+                "r_squared": r_squared,
+            }
+        return None
 
     def select_export_plot_file(self, title, plot_curves, file_format, source="csv",
                                  legend_visible=True, legend_position="best", smoothing=None, approximation=None):
@@ -748,6 +786,7 @@ class MathLabBridge:
 
             labels_x = []
             labels_y = []
+            approximations = []
 
             for spec in curves:
                 if not isinstance(spec, dict):
@@ -771,10 +810,13 @@ class MathLabBridge:
                 if y_column not in frame.columns:
                     raise KeyError(f"Не найден столбец: {y_column}")
 
-                self._add_plot_curve(
+                curve_label = label or f"{dataset_name}: {y_column}"
+                fit_info = self._add_plot_curve(
                     manager, frame, x_column, y_column,
-                    label or f"{dataset_name}: {y_column}", smoothing, approximation,
+                    curve_label, smoothing, approximation,
                 )
+                if fit_info:
+                    approximations.append(fit_info)
                 labels_x.append(str(x_column))
                 labels_y.append(str(y_column))
 
@@ -797,6 +839,7 @@ class MathLabBridge:
                 "ok": True,
                 "image": f"data:image/png;base64,{encoded}",
                 "curve_count": len(curves),
+                "approximations": approximations,
             }
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
@@ -818,6 +861,7 @@ class MathLabBridge:
             )
             labels_x = []
             labels_y = []
+            approximations = []
 
             with self._lock:
                 variables = self.engine.variables.as_dict()
@@ -844,7 +888,9 @@ class MathLabBridge:
                         raise ValueError(f"Массивы '{x_name}' и '{y_name}' содержат нечисловые значения")
                     frame = pd.DataFrame({"x": x, "y": y})
                     label = spec.get("label") or f"{y_name}({x_name})"
-                    self._add_plot_curve(manager, frame, "x", "y", label, smoothing, approximation)
+                    fit_info = self._add_plot_curve(manager, frame, "x", "y", label, smoothing, approximation)
+                    if fit_info:
+                        approximations.append(fit_info)
                     labels_x.append(x_name)
                     labels_y.append(y_name)
 
@@ -860,6 +906,7 @@ class MathLabBridge:
                 "ok": True,
                 "image": f"data:image/png;base64,{encoded}",
                 "curve_count": len(curves),
+                "approximations": approximations,
             }
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
