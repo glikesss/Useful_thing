@@ -1,4 +1,5 @@
 ﻿import pytest
+from io import BytesIO
 import matplotlib
 matplotlib.use("Agg", force=True)
 
@@ -509,20 +510,45 @@ def test_table_export_save_dialog_handles_string_and_list_paths(
     }
 
 
-@pytest.mark.parametrize("file_format", ["png", "pdf"])
-def test_bridge_exports_table_as_image_or_pdf(tmp_path, file_format):
-    source = tmp_path / "source.csv"
-    output = tmp_path / ("table." + file_format)
-    source.write_text("time,value\n0,1\n1,2\n", encoding="utf-8")
+def test_bridge_rejects_png_export_for_data_table(tmp_path):
     bridge = MathLabBridge()
-    bridge.load_csv(source, "measurement")
 
-    response = bridge.export_table("measurement", output, file_format)
+    response = bridge.export_table("measurement", tmp_path / "table.png", "png")
 
-    assert response["ok"] is True
+    assert response["ok"] is False
+    assert "только в Excel" in response["error"]
+
+
+@pytest.mark.parametrize("file_format", ["png", "pdf"])
+def test_bridge_exports_rendered_plot_image(tmp_path, monkeypatch, file_format):
+    import base64
+    import sys
+    from types import SimpleNamespace
+    import matplotlib.pyplot as plt
+
+    buffer = BytesIO()
+    figure, axis = plt.subplots()
+    axis.plot([0, 1, 2], [0, 1, 4])
+    figure.savefig(buffer, format="png")
+    plt.close(figure)
+    image_data = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+    output = tmp_path / ("graph." + file_format)
+
+    class FakeWindow:
+        def create_file_dialog(self, *args, **kwargs):
+            return str(output)
+
+    bridge = MathLabBridge()
+    bridge._set_window(FakeWindow())
+    monkeypatch.setitem(
+        sys.modules,
+        "webview",
+        SimpleNamespace(FileDialog=SimpleNamespace(SAVE=1)),
+    )
+
+    response = bridge.select_export_plot_file("graph", image_data, file_format)
+
+    assert response["ok"] is True, response
     assert output.is_file()
     assert output.stat().st_size > 0
-    if file_format == "pdf":
-        assert output.read_bytes().startswith(b"%PDF")
-    else:
-        assert output.read_bytes().startswith(b"\x89PNG")
+    assert output.read_bytes().startswith(b"%PDF" if file_format == "pdf" else b"\\x89PNG")
