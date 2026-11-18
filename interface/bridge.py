@@ -444,7 +444,10 @@ class MathLabBridge:
             )
             if not selected:
                 return {"ok": False, "cancelled": True}
-            path = Path(selected[0])
+            # pywebview returns a string for SAVE dialogs, but a list for OPEN dialogs.
+            # Indexing a string here would keep only the first character of the path.
+            selected_path = selected if isinstance(selected, (str, Path)) else selected[0]
+            path = Path(selected_path)
             if path.suffix.lower() != extension:
                 path = path.with_suffix(extension)
             return self.export_table(name, path, file_format)
