@@ -185,12 +185,14 @@ function updateProcessingControls() {
         addOption(columnSelect, column, column);
         addOption(xSelect, column, column);
     }
-    // Prefer the first numeric column as X (usually time) and the second as Y.
+    // Prefer the first numeric column as X (usually time).
+    // If a smoothed column exists, select it as Y for the next operation.
     if (dataset.numeric_columns.length > 1) {
-        columnSelect.selectedIndex = 1;
+        const smoothedIndex = dataset.numeric_columns.findIndex(
+            column => column.endsWith("_smoothed")
+        );
+        columnSelect.selectedIndex = smoothedIndex >= 0 ? smoothedIndex : 1;
         xSelect.selectedIndex = 1;
-    } else if (dataset.numeric_columns.length === 1) {
-        xSelect.selectedIndex = 0; // use row index when no separate X column exists
     }
     columnSelect.disabled = dataset.numeric_columns.length === 0;
     xSelect.disabled = dataset.numeric_columns.length === 0;
