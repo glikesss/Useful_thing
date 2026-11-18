@@ -440,8 +440,6 @@ class MathLabBridge:
             if self._window is None:
                 raise RuntimeError("Окно приложения ещё не создано")
             formats = {
-                "png": ("PNG image (*.png)", ".png"),
-                "pdf": ("PDF document (*.pdf)", ".pdf"),
                 "xlsx": ("Excel workbook (*.xlsx)", ".xlsx"),
             }
             if file_format not in formats:
