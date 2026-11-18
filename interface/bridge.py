@@ -257,9 +257,14 @@ class MathLabBridge:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    def process_dataset(self, name, operation, column=None, *, x_column=None, window=3):
+    def process_dataset(self, name, operation, column=None, options=None):
         """Apply a numerical operation to a dataset without modifying its source."""
         try:
+            options = options or {}
+            if not isinstance(options, dict):
+                raise TypeError("options must be an object")
+            x_column = options.get("x_column")
+            window = options.get("window", 3)
             if not isinstance(name, str) or not name.strip():
                 raise ValueError("Не выбран набор данных")
             with self._lock:
