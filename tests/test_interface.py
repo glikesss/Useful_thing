@@ -614,3 +614,22 @@ def test_bridge_exports_rendered_plot_with_matplotlib_savefig(tmp_path, monkeypa
     assert output.is_file()
     assert output.stat().st_size > 0
     assert output.read_bytes().startswith(b"%PDF" if file_format == "pdf" else b"\x89PNG")
+
+
+def test_bridge_returns_approximation_formula_for_plot(tmp_path):
+    path = tmp_path / "linear.csv"
+    path.write_text("x,y\\n0,1\\n1,3\\n2,5\\n", encoding="utf-8")
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "linear")
+
+    response = bridge.render_plot_curves(
+        [{"dataset_name": "linear", "x_column": "x", "y_column": "y", "label": "Измерение"}],
+        approximation={"enabled": True, "model": "linear"},
+    )
+
+    assert response["ok"] is True
+    assert response["approximations"] == [{
+        "label": "Измерение",
+        "formula": "y = 2x + 1",
+        "r_squared": pytest.approx(1.0),
+    }]
