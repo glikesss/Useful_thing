@@ -271,6 +271,67 @@ function updatePlotColumns() {
     byId("add-plot-curve").disabled = false;
 }
 
+
+function updatePlotGroupControls() {
+    const datasetSelect = byId("plot-group-datasets");
+    const selectedNames = new Set(Array.from(datasetSelect.selectedOptions || []).map(option => option.value));
+    datasetSelect.replaceChildren();
+    for (const dataset of currentState?.datasets || []) {
+        const option = document.createElement("option");
+        option.value = dataset.name;
+        option.textContent = dataset.name;
+        option.selected = selectedNames.has(dataset.name);
+        datasetSelect.appendChild(option);
+    }
+    datasetSelect.disabled = !(currentState?.datasets?.length);
+    updatePlotGroupColumns();
+}
+
+function updatePlotGroupColumns() {
+    const names = Array.from(byId("plot-group-datasets").selectedOptions).map(option => option.value);
+    const datasets = (currentState?.datasets || []).filter(dataset => names.includes(dataset.name));
+    const xSelect = byId("plot-group-x");
+    const ySelect = byId("plot-group-y");
+    const previousX = xSelect.value;
+    const previousY = ySelect.value;
+    const common = datasets.length
+        ? datasets.map(dataset => dataset.numeric_columns)
+            .reduce((shared, columns) => shared.filter(column => columns.includes(column)))
+        : [];
+    for (const select of [xSelect, ySelect]) {
+        select.replaceChildren();
+        addOption(select, "", common.length ? "Выберите столбец" : "Нет общих числовых столбцов");
+        for (const column of common) addOption(select, column, column);
+    }
+    xSelect.value = common.includes(previousX) ? previousX : (common[0] || "");
+    ySelect.value = common.includes(previousY) ? previousY : (common[1] || common[0] || "");
+    xSelect.disabled = !common.length;
+    ySelect.disabled = !common.length;
+    byId("add-plot-group").disabled = datasets.length < 1 || common.length < 1;
+}
+
+function addPlotGroupCurves() {
+    const names = Array.from(byId("plot-group-datasets").selectedOptions).map(option => option.value);
+    const xColumn = byId("plot-group-x").value;
+    const yColumn = byId("plot-group-y").value;
+    if (!names.length || !xColumn || !yColumn) {
+        setMessage("plot-message", "Выбери наборы данных и общие столбцы X/Y", "error");
+        return;
+    }
+    if (plotCurves.some(curve => curve.source === "array")) {
+        setMessage("plot-message", "На одном графике нельзя смешивать CSV и массивы. Очисти список кривых.", "error");
+        return;
+    }
+    let added = 0;
+    for (const name of names) {
+        if (plotCurves.some(curve => curve.dataset_name === name && curve.x_column === xColumn && curve.y_column === yColumn)) continue;
+        plotCurves.push({dataset_name: name, x_column: xColumn, y_column: yColumn, label: name + ": " + yColumn});
+        added++;
+    }
+    renderCurveList();
+    setMessage("plot-message", added ? "Добавлено кривых: " + added : "Такие кривые уже добавлены", added ? "success" : "");
+}
+
 function updatePlotArrays() {
     const xSelect = byId("plot-array-x");
     const ySelect = byId("plot-array-y");
@@ -563,6 +624,7 @@ function renderDatasets(datasets) {
         : datasets[0].name;
 
     updatePlotColumns();
+    updatePlotGroupControls();
     refreshTable();
 }
 
@@ -631,6 +693,7 @@ async function applyFormulas(automatic = false) {
             if (isDefinitionLine(lines[i])) {
                 result.hidden = true;
                 result.textContent = "";
+                result.closest(".formula-row")?.classList.remove("has-error");
                 continue;
             }
 
@@ -643,6 +706,7 @@ async function applyFormulas(automatic = false) {
                 result.textContent = evaluated.ok ? "= " + evaluated.result : evaluated.error;
                 result.hidden = false;
                 result.classList.toggle("error", !evaluated.ok);
+                result.closest(".formula-row")?.classList.toggle("has-error", !evaluated.ok);
             } catch (error) {
                 result.textContent = error.message;
                 result.hidden = false;
@@ -884,6 +948,8 @@ byId("clear-formulas").addEventListener("click", async () => {
 byId("add-formula-line").addEventListener("click", () => addFormulaLine());
 
 byId("load-csv").addEventListener("click", loadCsv);
+byId("plot-group-datasets").addEventListener("change", updatePlotGroupColumns);
+byId("add-plot-group").addEventListener("click", addPlotGroupCurves);
 byId("array-import-dataset").addEventListener("change", updateArrayImportColumns);
 byId("array-import-column").addEventListener("change", () => {
     byId("import-column-array").disabled = !byId("array-import-column").value;
