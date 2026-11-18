@@ -219,6 +219,33 @@ def test_plot_curve_smoothing_does_not_modify_source_data():
     assert frame["value"].tolist() == [0.0, 10.0, 0.0, 10.0, 0.0]
 
 
+@pytest.mark.parametrize(
+    ("model", "x", "y"),
+    [
+        ("linear", [1, 2, 3, 4], [3, 5, 7, 9]),
+        ("polynomial", [-2, -1, 0, 1, 2], [4, 1, 0, 1, 4]),
+        ("exponential", [0, 1, 2, 3], [2, 2 * np.e, 2 * np.e**2, 2 * np.e**3]),
+        ("logarithmic", [1, np.e, np.e**2, np.e**3], [1, 3, 5, 7]),
+        ("power", [1, 2, 3, 4], [1, 4, 9, 16]),
+    ],
+)
+def test_plot_approximation_models(model, x, y):
+    frame = pd.DataFrame({"x": x, "y": y})
+    fit, r_squared = MathLabBridge._fit_plot_curve(
+        frame, "x", "y", {"model": model, "degree": 2}
+    )
+
+    assert len(fit) == 300
+    assert fit["x"].is_monotonic_increasing
+    assert r_squared == pytest.approx(1.0, abs=1e-10)
+
+
+def test_plot_approximation_rejects_nonpositive_logarithmic_inputs():
+    frame = pd.DataFrame({"x": [0, 1, 2], "y": [1, 2, 3]})
+    with pytest.raises(ValueError, match="X должен быть положительным"):
+        MathLabBridge._fit_plot_curve(frame, "x", "y", {"model": "logarithmic"})
+
+
 def test_bridge_rejects_import_of_non_numeric_csv_column(tmp_path):
     path = tmp_path / "measurement.csv"
     path.write_text("time,label\n0,a\n1,b\n", encoding="utf-8")
