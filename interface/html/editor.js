@@ -346,7 +346,8 @@ function addPlotGroupCurves() {
         added++;
     }
     renderCurveList();
-    setMessage("plot-message", added ? "Добавлено кривых: " + added : "Такие кривые уже добавлены", added ? "success" : "");
+    if (added) renderPlot();
+    else setMessage("plot-message", "Такие кривые уже добавлены", "");
 }
 
 function updatePlotArrays() {
@@ -393,7 +394,7 @@ function addArrayPlotCurve() {
     plotCurves.push({source: "array", x_name: xName, y_name: yName, label});
     byId("plot-array-label").value = "";
     renderCurveList();
-    setMessage("plot-message", `Добавлена кривая: ${label}`, "success");
+    renderPlot();
 }
 
 function getActivePlotGraph() {
@@ -560,7 +561,7 @@ function addPlotCurve() {
 
     byId("plot-curve-label").value = "";
     renderCurveList();
-    setMessage("plot-message", `Добавлена кривая: ${label}`, "success");
+    renderPlot();
 }
 
 function renderDatasets(datasets) {
