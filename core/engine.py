@@ -28,6 +28,20 @@ def _substitute_expression(expression, substitutions):
 
 def _numeric_array(expression):
     values = []
+    nested_arrays = any(
+        isinstance(item, np.ndarray)
+        for item in expression.flat
+    )
+    if nested_arrays:
+        result = np.empty(expression.shape, dtype=object)
+        for index, item in enumerate(expression.flat):
+            result.flat[index] = (
+                _numeric_array(item)
+                if isinstance(item, np.ndarray)
+                else item
+            )
+        return result
+
     for item in expression.flat:
         if isinstance(item, sp.Basic):
             if item.free_symbols:
