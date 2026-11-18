@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.integrate import trapezoid
+from scipy.signal import savgol_filter
 
 
 def _validate_dataframe(data):
@@ -47,7 +48,7 @@ def filter_rows(data, column, *, minimum=None, maximum=None):
     return data.loc[mask].copy()
 
 
-def smooth(data, column, *, window=3, result_column=None):
+def smooth(data, column, *, window=3, method="moving_average", polyorder=2, result_column=None):
     _validate_dataframe(data)
     _validate_column(data, column)
 
@@ -58,15 +59,34 @@ def smooth(data, column, *, window=3, result_column=None):
     if np.isinf(values.to_numpy(dtype=float, na_value=np.nan)).any():
         raise ValueError("Input column must not contain infinite values")
 
+    numeric_values = pd.to_numeric(data[column], errors="raise")
     result = data.copy()
     output_column = result_column or f"{column}_smoothed"
 
-    result[output_column] = (
-        pd.to_numeric(result[column], errors="raise")
-        .rolling(window=window, center=True, min_periods=1)
-        .mean()
-    )
+    if method == "moving_average":
+        smoothed = numeric_values.rolling(
+            window=window, center=True, min_periods=1
+        ).mean()
+    elif method == "savgol":
+        if window < 3 or window % 2 == 0:
+            raise ValueError("Savitzky-Golay window must be an odd integer >= 3")
+        if not isinstance(polyorder, int) or isinstance(polyorder, bool) or polyorder < 1:
+            raise ValueError("polyorder must be a positive integer")
+        if polyorder >= window:
+            raise ValueError("polyorder must be smaller than window")
+        if window > len(data):
+            raise ValueError("Savitzky-Golay window cannot exceed the number of rows")
+        values = numeric_values.to_numpy(dtype=float)
+        if not np.all(np.isfinite(values)):
+            raise ValueError("Savitzky-Golay input must contain only finite values")
+        smoothed = pd.Series(
+            savgol_filter(values, window_length=window, polyorder=polyorder, mode="interp"),
+            index=data.index,
+        )
+    else:
+        raise ValueError("Unknown smoothing method")
 
+    result[output_column] = smoothed
     return result
 
 
