@@ -225,3 +225,8 @@ __marimo__/
 *.bak
 *.bak.*
 *.bak_*
+
+.venv-android/
+android/.buildozer/
+android/bin/
+android/pywebview-android.jar
