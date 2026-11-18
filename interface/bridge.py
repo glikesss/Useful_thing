@@ -6,7 +6,7 @@ from threading import RLock
 import matplotlib
 matplotlib.use("Agg", force=True)
 import pandas as pd
-import sympy as sp
+from sympy.printing.mathml import mathml as sympy_mathml
 
 from core import MathEngine
 from data import DataManager, load_csv_file
@@ -76,7 +76,7 @@ class MathLabBridge:
     def _expression_mathml(expression):
         """Render a SymPy expression as presentation MathML for the UI."""
         try:
-            return sp.printing.mathml(expression, printer="presentation")
+            return sympy_mathml(expression, printer="presentation")
         except Exception:
             return None
 
