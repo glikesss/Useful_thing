@@ -575,10 +575,7 @@ function renderDatasets(datasets) {
 
     container.className = "dataset-list";
     const toggle = byId("toggle-datasets");
-    toggle.hidden = datasets.length <= 4;
-    toggle.textContent = datasetsExpanded
-        ? "Свернуть список"
-        : "Показать все файлы (" + datasets.length + ")";
+    toggle.hidden = true;
     plotSelect.disabled = false;
     tableSelect.disabled = false;
     byId("refresh-table").disabled = false;
