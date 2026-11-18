@@ -50,6 +50,8 @@
                 <button class="button secondary" id="clear-formulas">
                     Очистить
                 </button>
+                <button class="button secondary" id="add-formula-line">+ Строка</button>
+                <button class="button secondary" id="remove-formula-line">− Строка</button>
             </div>
 
             <div class="message" id="formula-message"></div>
@@ -153,15 +155,22 @@
                         <option value="">—</option>
                     </select>
                 </label>
-                <label class="title-field">
-                    Заголовок
-                    <input id="plot-title" type="text" placeholder="Название графика">
+                <label>
+                    Подпись кривой
+                    <input id="plot-curve-label" type="text" placeholder="Например: Измерение 1">
                 </label>
-                <button class="button primary plot-button" id="render-plot" disabled>
-                    Построить
+                <button class="button secondary plot-button" id="add-plot-curve" disabled>
+                    + Добавить кривую
                 </button>
             </div>
 
+            <div class="curve-toolbar">
+                <div id="plot-curves-list" class="curve-list empty">Кривые не добавлены</div>
+                <div class="plot-title-control">
+                    <input id="plot-title" type="text" placeholder="Название графика">
+                    <button class="button primary" id="render-plot" disabled>Построить график</button>
+                </div>
+            </div>
             <div class="plot-container">
                 <div id="plot-placeholder">
                     Загрузите CSV и выберите столбцы для построения графика
@@ -169,6 +178,26 @@
                 <img id="plot-image" alt="Построенный график" hidden>
             </div>
             <div class="message" id="plot-message"></div>
+        </section>
+        <section class="panel table-panel">
+            <div class="panel-heading">
+                <div>
+                    <div class="eyebrow">DATA INSPECTOR</div>
+                    <h2>Таблица данных</h2>
+                </div>
+                <span class="panel-index">05</span>
+            </div>
+            <div class="table-toolbar">
+                <select id="table-dataset" disabled>
+                    <option value="">Нет данных</option>
+                </select>
+                <button class="button secondary" id="refresh-table" disabled>Обновить</button>
+                <span id="table-info" class="dataset-meta"></span>
+            </div>
+            <div class="table-overflow" id="table-view">
+                <div class="empty">Загрузите CSV для просмотра таблицы</div>
+            </div>
+            <div class="message" id="table-message"></div>
         </section>
     </main>
 
@@ -178,3 +207,4 @@
     </footer>
 </body>
 </html>
+

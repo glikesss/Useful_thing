@@ -2,6 +2,7 @@
 
 let api = null;
 let currentState = null;
+let plotCurves = [];
 
 function setMessage(id, message, type = "") {
     const element = byId(id);
@@ -83,7 +84,9 @@ function updatePlotColumns() {
     if (!dataset || dataset.numeric_columns.length < 1) {
         addOption(xSelect, "", "Нет числовых столбцов");
         addOption(ySelect, "", "Нет числовых столбцов");
-        byId("render-plot").disabled = true;
+        xSelect.disabled = true;
+        ySelect.disabled = true;
+        byId("add-plot-curve").disabled = true;
         return;
     }
 
@@ -98,30 +101,104 @@ function updatePlotColumns() {
 
     xSelect.disabled = false;
     ySelect.disabled = false;
+    byId("add-plot-curve").disabled = false;
+}
+
+function renderCurveList() {
+    const container = byId("plot-curves-list");
+    container.replaceChildren();
+
+    if (!plotCurves.length) {
+        container.textContent = "Кривые не добавлены";
+        container.className = "curve-list empty";
+        byId("render-plot").disabled = true;
+        return;
+    }
+
+    container.className = "curve-list";
+
+    plotCurves.forEach((curve, index) => {
+        const item = document.createElement("div");
+        item.className = "curve-item";
+
+        const label = document.createElement("span");
+        label.textContent =
+            `${curve.label} · ${curve.dataset_name} (${curve.x_column}, ${curve.y_column})`;
+
+        const remove = document.createElement("button");
+        remove.className = "dataset-remove";
+        remove.textContent = "×";
+        remove.title = "Удалить кривую";
+        remove.addEventListener("click", () => {
+            plotCurves.splice(index, 1);
+            renderCurveList();
+        });
+
+        item.append(label, remove);
+        container.appendChild(item);
+    });
+
     byId("render-plot").disabled = false;
+}
+
+function addPlotCurve() {
+    const datasetName = byId("plot-dataset").value;
+    const xColumn = byId("plot-x").value;
+    const yColumn = byId("plot-y").value;
+
+    if (!datasetName || !xColumn || !yColumn) {
+        setMessage("plot-message", "Выберите набор данных и столбцы X/Y", "error");
+        return;
+    }
+
+    const label = byId("plot-curve-label").value.trim()
+        || `${datasetName}: ${yColumn}`;
+
+    plotCurves.push({
+        dataset_name: datasetName,
+        x_column: xColumn,
+        y_column: yColumn,
+        label,
+    });
+
+    byId("plot-curve-label").value = "";
+    renderCurveList();
+    setMessage("plot-message", `Добавлена кривая: ${label}`, "success");
 }
 
 function renderDatasets(datasets) {
     const container = byId("datasets-list");
-    const datasetSelect = byId("plot-dataset");
-    const selected = datasetSelect.value;
+    const plotSelect = byId("plot-dataset");
+    const tableSelect = byId("table-dataset");
+
+    const previousPlot = plotSelect.value;
+    const previousTable = tableSelect.value;
 
     container.replaceChildren();
-    datasetSelect.replaceChildren();
+    plotSelect.replaceChildren();
+    tableSelect.replaceChildren();
 
     if (!datasets.length) {
         container.textContent = "CSV-файлы ещё не загружены";
         container.className = "dataset-list empty";
-        addOption(datasetSelect, "", "Нет данных");
-        datasetSelect.disabled = true;
+        addOption(plotSelect, "", "Нет данных");
+        addOption(tableSelect, "", "Нет данных");
+        plotSelect.disabled = true;
+        tableSelect.disabled = true;
+        byId("refresh-table").disabled = true;
         updatePlotColumns();
+        renderCurveList();
+        renderTablePlaceholder("Загрузите CSV для просмотра таблицы");
         return;
     }
 
     container.className = "dataset-list";
-    datasetSelect.disabled = false;
+    plotSelect.disabled = false;
+    tableSelect.disabled = false;
+    byId("refresh-table").disabled = false;
 
-    addOption(datasetSelect, "", "Выберите набор");
+    addOption(plotSelect, "", "Выберите набор");
+    addOption(tableSelect, "", "Выберите набор");
 
     for (const dataset of datasets) {
         const item = document.createElement("div");
@@ -146,16 +223,20 @@ function renderDatasets(datasets) {
         item.append(details, remove);
         container.appendChild(item);
 
-        addOption(datasetSelect, dataset.name, dataset.name);
+        addOption(plotSelect, dataset.name, dataset.name);
+        addOption(tableSelect, dataset.name, dataset.name);
     }
 
-    if (datasets.some(item => item.name === selected)) {
-        datasetSelect.value = selected;
-    } else if (datasets.length === 1) {
-        datasetSelect.value = datasets[0].name;
-    }
+    plotSelect.value = datasets.some(item => item.name === previousPlot)
+        ? previousPlot
+        : datasets[0].name;
+
+    tableSelect.value = datasets.some(item => item.name === previousTable)
+        ? previousTable
+        : datasets[0].name;
 
     updatePlotColumns();
+    refreshTable();
 }
 
 function renderState(state, updateEditor = false) {
@@ -196,6 +277,31 @@ async function applyFormulas() {
     }
 }
 
+function addFormulaLine() {
+    const editor = byId("formula-input");
+    const position = editor.selectionStart;
+    const before = editor.value.slice(0, position);
+    const after = editor.value.slice(position);
+    const insertion = before && !before.endsWith("\n") ? "\n" : "";
+
+    editor.value = before + insertion + after;
+    editor.focus();
+    const cursor = before.length + insertion.length;
+    editor.setSelectionRange(cursor, cursor);
+}
+
+function removeFormulaLine() {
+    const editor = byId("formula-input");
+    const lines = editor.value.split(/\r?\n/);
+    if (lines.length <= 1) {
+        editor.value = "";
+    } else {
+        lines.pop();
+        editor.value = lines.join("\n");
+    }
+    editor.focus();
+}
+
 async function evaluateExpression() {
     const expression = byId("expression-input").value;
 
@@ -220,7 +326,6 @@ async function loadCsv() {
 
     try {
         const response = await api.select_csv_file(name);
-
         if (response.cancelled) return;
 
         if (!response.ok) {
@@ -245,6 +350,8 @@ async function removeDataset(name) {
             return;
         }
 
+        plotCurves = plotCurves.filter(curve => curve.dataset_name !== name);
+        renderCurveList();
         renderState(response.state);
         setMessage("dataset-message", `Удалено: ${name}`, "success");
     } catch (error) {
@@ -252,19 +359,77 @@ async function removeDataset(name) {
     }
 }
 
-async function renderPlot() {
-    const dataset = byId("plot-dataset").value;
-    const x = byId("plot-x").value;
-    const y = byId("plot-y").value;
-    const title = byId("plot-title").value.trim() || null;
+function renderTablePlaceholder(message) {
+    const container = byId("table-view");
+    container.replaceChildren();
 
-    if (!dataset || !x || !y) {
-        setMessage("plot-message", "Выберите набор и оба столбца", "error");
+    const placeholder = document.createElement("div");
+    placeholder.className = "empty";
+    placeholder.textContent = message;
+    container.appendChild(placeholder);
+}
+
+async function refreshTable() {
+    const name = byId("table-dataset").value;
+    if (!name) {
+        renderTablePlaceholder("Выберите набор данных");
+        byId("table-info").textContent = "";
         return;
     }
 
     try {
-        const response = await api.render_plot(dataset, x, y, title);
+        const response = await api.preview_data(name, 100);
+
+        if (!response.ok) {
+            setMessage("table-message", response.error, "error");
+            return;
+        }
+
+        const table = document.createElement("table");
+        table.className = "data-table";
+
+        const thead = document.createElement("thead");
+        const header = document.createElement("tr");
+        for (const column of response.columns) {
+            const th = document.createElement("th");
+            th.textContent = column;
+            header.appendChild(th);
+        }
+        thead.appendChild(header);
+
+        const tbody = document.createElement("tbody");
+        for (const row of response.rows) {
+            const tr = document.createElement("tr");
+            for (const value of row) {
+                const td = document.createElement("td");
+                td.textContent = value === null ? "—" : String(value);
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+
+        table.append(thead, tbody);
+        byId("table-view").replaceChildren(table);
+
+        byId("table-info").textContent =
+            `Показано ${response.shown_rows} из ${response.total_rows} строк`;
+
+        setMessage("table-message", "Таблица обновлена", "success");
+    } catch (error) {
+        setMessage("table-message", error.message, "error");
+    }
+}
+
+async function renderPlot() {
+    if (!plotCurves.length) {
+        setMessage("plot-message", "Добавьте хотя бы одну кривую", "error");
+        return;
+    }
+
+    const title = byId("plot-title").value.trim() || null;
+
+    try {
+        const response = await api.render_plot_curves(plotCurves, title);
 
         if (!response.ok) {
             setMessage("plot-message", response.error, "error");
@@ -274,7 +439,11 @@ async function renderPlot() {
         byId("plot-image").src = response.image;
         byId("plot-image").hidden = false;
         byId("plot-placeholder").hidden = true;
-        setMessage("plot-message", "График построен", "success");
+        setMessage(
+            "plot-message",
+            `Построено кривых: ${response.curve_count}`,
+            "success",
+        );
     } catch (error) {
         setMessage("plot-message", error.message, "error");
     }
@@ -282,7 +451,6 @@ async function renderPlot() {
 
 async function initialize() {
     if (api) return;
-
     api = window.pywebview.api;
 
     try {
@@ -299,16 +467,23 @@ byId("clear-formulas").addEventListener("click", () => {
     byId("formula-input").value = "";
     applyFormulas();
 });
+byId("add-formula-line").addEventListener("click", addFormulaLine);
+byId("remove-formula-line").addEventListener("click", removeFormulaLine);
+byId("formula-input").addEventListener("keydown", event => {
+    if (event.ctrlKey && event.key === "Enter") applyFormulas();
+});
+
 byId("evaluate-button").addEventListener("click", evaluateExpression);
 byId("expression-input").addEventListener("keydown", event => {
     if (event.key === "Enter") evaluateExpression();
 });
+
 byId("load-csv").addEventListener("click", loadCsv);
 byId("plot-dataset").addEventListener("change", updatePlotColumns);
+byId("add-plot-curve").addEventListener("click", addPlotCurve);
 byId("render-plot").addEventListener("click", renderPlot);
+byId("table-dataset").addEventListener("change", refreshTable);
+byId("refresh-table").addEventListener("click", refreshTable);
 
 document.addEventListener("pywebviewready", initialize);
-
-if (window.pywebview?.api) {
-    initialize();
-}
+if (window.pywebview?.api) initialize();

@@ -115,3 +115,77 @@ def test_bridge_renders_plot(tmp_path):
     assert response["ok"] is True
     assert response["image"].startswith("data:image/png;base64,")
 
+
+def test_bridge_previews_dataset(tmp_path):
+    path = tmp_path / "preview.csv"
+    path.write_text("time,value\n0,1\n1,2\n2,\n", encoding="utf-8")
+
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "preview")
+
+    response = bridge.preview_data("preview", 2)
+
+    assert response["ok"] is True
+    assert response["columns"] == ["time", "value"]
+    assert response["rows"] == [[0, 1], [1, 2]]
+    assert response["total_rows"] == 3
+    assert response["shown_rows"] == 2
+
+
+def test_bridge_preview_preserves_missing_values_as_none(tmp_path):
+    path = tmp_path / "missing.csv"
+    path.write_text("x,y\n1,\n", encoding="utf-8")
+
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "missing")
+
+    response = bridge.preview_data("missing")
+
+    assert response["ok"] is True
+    assert response["rows"] == [[1, None]]
+
+
+def test_bridge_preview_rejects_invalid_limit():
+    bridge = MathLabBridge()
+
+    response = bridge.preview_data("missing", 0)
+
+    assert response["ok"] is False
+
+
+def test_bridge_renders_multiple_curves(tmp_path):
+    first = tmp_path / "first.csv"
+    second = tmp_path / "second.csv"
+    first.write_text("time,a\n0,1\n1,2\n", encoding="utf-8")
+    second.write_text("time,b\n0,3\n1,5\n", encoding="utf-8")
+
+    bridge = MathLabBridge()
+    bridge.load_csv(first, "first")
+    bridge.load_csv(second, "second")
+
+    response = bridge.render_plot_curves([
+        {
+            "dataset_name": "first",
+            "x_column": "time",
+            "y_column": "a",
+            "label": "A",
+        },
+        {
+            "dataset_name": "second",
+            "x_column": "time",
+            "y_column": "b",
+            "label": "B",
+        },
+    ], "Comparison")
+
+    assert response["ok"] is True
+    assert response["curve_count"] == 2
+    assert response["image"].startswith("data:image/png;base64,")
+
+
+def test_bridge_rejects_empty_curve_list():
+    bridge = MathLabBridge()
+
+    response = bridge.render_plot_curves([])
+
+    assert response["ok"] is False
