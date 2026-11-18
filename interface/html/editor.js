@@ -96,8 +96,8 @@ function renderFormulaEditor(lines = [], formulas = []) {
         remove.addEventListener("click", () => {
             const current = getFormulaLines();
             current.splice(index, 1);
-            renderFormulaEditor(current);
-            if (!current.length) renderFormulaEditor([""]);
+            renderFormulaEditor(current, currentState?.formulas || []);
+            if (!current.length) renderFormulaEditor([""], currentState?.formulas || []);
         });
 
         input.addEventListener("keydown", event => {
@@ -111,7 +111,7 @@ function renderFormulaEditor(lines = [], formulas = []) {
                 event.preventDefault();
                 const current = getFormulaLines();
                 current.splice(index, 1);
-                renderFormulaEditor(current);
+                renderFormulaEditor(current, currentState?.formulas || []);
                 const target = container.children[Math.max(0, index - 1)]?.querySelector("input");
                 target?.focus();
             }
@@ -485,7 +485,7 @@ function addFormulaLine(afterIndex = null) {
     const lines = getFormulaLines();
     const insertAt = afterIndex === null ? lines.length : afterIndex;
     lines.splice(insertAt, 0, "");
-    renderFormulaEditor(lines);
+    renderFormulaEditor(lines, currentState?.formulas || []);
     const input = byId("formula-editor-list").children[insertAt]?.querySelector("input");
     input?.focus();
 }
