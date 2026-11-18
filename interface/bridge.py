@@ -286,8 +286,8 @@ class MathLabBridge:
             array_name = array_name.strip()
             if not array_name.isidentifier():
                 raise ValueError("Имя массива должно быть корректным идентификатором")
-            if array_name in self.engine.definitions or array_name in self.engine.functions:
-                raise ValueError(f"Имя '{array_name}' уже используется формулой или функцией")
+            if array_name in self.engine.get_variable_names() or array_name in self.engine.definitions or array_name in self.engine.functions:
+                raise ValueError(f"Имя '{array_name}' уже используется")
 
             with self._lock:
                 frame = self.data_manager.get_data(dataset_name)
