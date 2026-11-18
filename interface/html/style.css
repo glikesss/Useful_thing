@@ -564,3 +564,20 @@ footer {
     .legend-controls { align-items: stretch; flex-direction: column; }
     .legend-controls select { width: 100%; }
 }
+
+
+/* Plot-first layout: show the visualization before its configuration controls */
+.plot-panel {
+    display: flex;
+    flex-direction: column;
+}
+.plot-panel > .panel-heading { order: 1; }
+.plot-panel > .plot-tabs-bar { order: 2; }
+.plot-panel > .plot-container { order: 3; margin-top: 4px; }
+.plot-panel > #plot-message { order: 4; }
+.plot-panel > .plot-controls:nth-of-type(1) { order: 5; }
+.plot-panel > .group-plot-panel { order: 6; }
+.plot-panel > .plot-controls:nth-of-type(2) { order: 7; }
+.plot-panel > .curve-toolbar { order: 8; }
+.plot-panel > .legend-controls { order: 9; }
+.plot-panel > .plot-container { min-height: 420px; }
