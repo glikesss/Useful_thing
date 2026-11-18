@@ -512,3 +512,7 @@ footer {
         flex-wrap: wrap;
     }
 }
+
+.process-panel { margin-top: 20px; }
+.processing-panel .plot-controls { grid-template-columns: 1.1fr 1fr 1fr 1.2fr 1fr auto; }
+@media (max-width: 1050px) { .processing-panel .plot-controls { grid-template-columns: 1fr 1fr; } }

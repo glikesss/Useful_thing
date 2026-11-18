@@ -10,6 +10,7 @@ import pandas as pd
 from core import MathEngine
 from data import DataManager, load_csv_file
 from data.csv_loader import save_csv_file
+from data.processing import derivative, integrate, smooth, statistics
 from plotting import PlotManager
 
 
@@ -253,6 +254,53 @@ class MathLabBridge:
             with self._lock:
                 self.data_manager.remove_data(name)
                 return {"ok": True, "state": self._build_state()}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def process_dataset(self, name, operation, column=None, *, x_column=None, window=3):
+        """Apply a numerical operation to a dataset without modifying its source."""
+        try:
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("Не выбран набор данных")
+            with self._lock:
+                frame = self.data_manager.get_data(name)
+
+            if operation == "smooth":
+                if not column:
+                    raise ValueError("Выберите столбец")
+                result = smooth(frame, column, window=window)
+                base_name = f"{name}_smooth"
+                result_label = "Сглаживание"
+            elif operation == "derivative":
+                if not column:
+                    raise ValueError("Выберите столбец")
+                result = derivative(frame, column, x_column=x_column or None)
+                base_name = f"{name}_derivative"
+                result_label = "Производная"
+            elif operation == "integrate":
+                if not column:
+                    raise ValueError("Выберите столбец")
+                value = integrate(frame, column, x_column=x_column or None)
+                return {"ok": True, "result": self._format_value(value),
+                        "message": f"Интеграл столбца {column}: {value}"}
+            elif operation == "statistics":
+                result = statistics(frame)
+                return {"ok": True, "result": result.to_string(),
+                        "message": "Статистика рассчитана"}
+            else:
+                raise ValueError("Неизвестная операция")
+
+            with self._lock:
+                output_name = base_name
+                suffix = 2
+                while output_name in self.data_manager:
+                    output_name = f"{base_name}_{suffix}"
+                    suffix += 1
+                self.data_manager.add_data(output_name, result)
+
+            return {"ok": True, "state": self._build_state(),
+                    "dataset_name": output_name,
+                    "message": f"{result_label}: создан набор «{output_name}»"}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 

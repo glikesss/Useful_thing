@@ -179,6 +179,34 @@
             </div>
             <div class="message" id="plot-message"></div>
         </section>
+        <section class="panel processing-panel">
+            <div class="panel-heading">
+                <div>
+                    <div class="eyebrow">NUMERICAL PROCESSING</div>
+                    <h2>Обработка данных</h2>
+                </div>
+                <span class="panel-index">06</span>
+            </div>
+            <div class="plot-controls">
+                <label>Набор данных<select id="process-dataset" disabled><option value="">Нет данных</option></select></label>
+                <label>Операция<select id="process-operation">
+                    <option value="smooth">Сглаживание</option>
+                    <option value="derivative">Производная</option>
+                    <option value="integrate">Интеграл</option>
+                    <option value="statistics">Статистика</option>
+                </select></label>
+                <label>Столбец Y<select id="process-column" disabled><option value="">—</option></select></label>
+                <label>Столбец X (необязательно)<select id="process-x-column" disabled><option value="">Индекс строк</option></select></label>
+                <label id="process-window-label">Окно сглаживания<input id="process-window" type="number" min="1" step="1" value="3"></label>
+                <button class="button primary" id="run-processing" disabled>Выполнить</button>
+            </div>
+            <div class="result-block">
+                <div class="subsection-title">РЕЗУЛЬТАТ</div>
+                <pre id="processing-result">Выберите набор данных и операцию</pre>
+            </div>
+            <div class="message" id="processing-message"></div>
+        </section>
+
         <section class="panel table-panel">
             <div class="panel-heading">
                 <div>

@@ -166,23 +166,81 @@ function addPlotCurve() {
     setMessage("plot-message", `Добавлена кривая: ${label}`, "success");
 }
 
+function updateProcessingControls() {
+    const datasetSelect = byId("process-dataset");
+    const columnSelect = byId("process-column");
+    const xSelect = byId("process-x-column");
+    const dataset = currentState?.datasets.find(item => item.name === datasetSelect.value);
+    columnSelect.replaceChildren();
+    xSelect.replaceChildren();
+    addOption(xSelect, "", "Индекс строк");
+    if (!dataset) {
+        addOption(columnSelect, "", "Нет данных");
+        columnSelect.disabled = true;
+        xSelect.disabled = true;
+        byId("run-processing").disabled = true;
+        return;
+    }
+    for (const column of dataset.numeric_columns) {
+        addOption(columnSelect, column, column);
+        addOption(xSelect, column, column);
+    }
+    columnSelect.disabled = dataset.numeric_columns.length === 0;
+    xSelect.disabled = dataset.numeric_columns.length === 0;
+    byId("run-processing").disabled = false;
+}
+function updateProcessingOperation() {
+    const operation = byId("process-operation").value;
+    byId("process-window-label").hidden = operation !== "smooth";
+    byId("process-column").disabled = operation === "statistics" || !currentState?.datasets.length;
+    byId("process-x-column").disabled = !["derivative", "integrate"].includes(operation);
+}
+async function runProcessing() {
+    const operation = byId("process-operation").value;
+    const name = byId("process-dataset").value;
+    const column = byId("process-column").value;
+    const xColumn = byId("process-x-column").value || null;
+    const window = Number(byId("process-window").value);
+    try {
+        const response = await api.process_dataset(name, operation, column, {
+            x_column: xColumn,
+            window,
+        });
+        if (!response.ok) {
+            setMessage("processing-message", response.error, "error");
+            return;
+        }
+        byId("processing-result").textContent = response.result ?? response.message;
+        if (response.state) renderState(response.state);
+        setMessage("processing-message", response.message, "success");
+    } catch (error) {
+        setMessage("processing-message", error.message, "error");
+    }
+}
+
 function renderDatasets(datasets) {
     const container = byId("datasets-list");
     const plotSelect = byId("plot-dataset");
     const tableSelect = byId("table-dataset");
+    const processSelect = byId("process-dataset");
 
     const previousPlot = plotSelect.value;
     const previousTable = tableSelect.value;
+    const previousProcess = processSelect.value;
 
     container.replaceChildren();
     plotSelect.replaceChildren();
     tableSelect.replaceChildren();
+    processSelect.replaceChildren();
 
     if (!datasets.length) {
         container.textContent = "CSV-файлы ещё не загружены";
         container.className = "dataset-list empty";
         addOption(plotSelect, "", "Нет данных");
         addOption(tableSelect, "", "Нет данных");
+        addOption(processSelect, "", "Нет данных");
+        processSelect.disabled = true;
+        byId("run-processing").disabled = true;
         plotSelect.disabled = true;
         tableSelect.disabled = true;
         byId("refresh-table").disabled = true;
@@ -195,10 +253,12 @@ function renderDatasets(datasets) {
     container.className = "dataset-list";
     plotSelect.disabled = false;
     tableSelect.disabled = false;
+    processSelect.disabled = false;
     byId("refresh-table").disabled = false;
 
     addOption(plotSelect, "", "Выберите набор");
     addOption(tableSelect, "", "Выберите набор");
+    addOption(processSelect, "", "Выберите набор");
 
     for (const dataset of datasets) {
         const item = document.createElement("div");
@@ -234,6 +294,7 @@ function renderDatasets(datasets) {
 
         addOption(plotSelect, dataset.name, dataset.name);
         addOption(tableSelect, dataset.name, dataset.name);
+        addOption(processSelect, dataset.name, dataset.name);
     }
 
     plotSelect.value = datasets.some(item => item.name === previousPlot)
@@ -244,7 +305,10 @@ function renderDatasets(datasets) {
         ? previousTable
         : datasets[0].name;
 
+    processSelect.value = datasets.some(item => item.name === previousProcess) ? previousProcess : datasets[0].name;
     updatePlotColumns();
+    updateProcessingControls();
+    updateProcessingOperation();
     refreshTable();
 }
 
@@ -508,6 +572,9 @@ byId("plot-dataset").addEventListener("change", updatePlotColumns);
 byId("add-plot-curve").addEventListener("click", addPlotCurve);
 byId("render-plot").addEventListener("click", renderPlot);
 byId("table-dataset").addEventListener("change", refreshTable);
+byId("process-dataset").addEventListener("change", updateProcessingControls);
+byId("process-operation").addEventListener("change", updateProcessingOperation);
+byId("run-processing").addEventListener("click", runProcessing);
 byId("refresh-table").addEventListener("click", refreshTable);
 
 window.addEventListener("pywebviewready", initialize);
