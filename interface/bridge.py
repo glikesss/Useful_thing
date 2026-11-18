@@ -76,7 +76,13 @@ class MathLabBridge:
     def _expression_mathml(expression):
         """Render a SymPy expression as presentation MathML for the UI."""
         try:
-            return sympy_mathml(expression, printer="presentation")
+            body = sympy_mathml(expression, printer="presentation")
+            if body.startswith("<math"):
+                return body
+            return (
+                '<math xmlns="http://www.w3.org/1998/Math/MathML">'
+                f"{body}</math>"
+            )
         except Exception:
             return None
 
