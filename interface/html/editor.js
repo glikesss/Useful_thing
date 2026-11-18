@@ -152,6 +152,33 @@ function renderFormulaEditor(lines = [], formulas = []) {
         item.append(number, input, remove, result);
         container.appendChild(item);
     });
+
+    const importedArrays = (currentState?.variables || [])
+        .filter(variable => variable.imported && variable.array_preview);
+    for (const variable of importedArrays) {
+        const preview = variable.array_preview;
+        const values = preview.values.map(value =>
+            typeof value === "number" ? Number(value.toPrecision(6)).toString() : String(value)
+        );
+        const suffix = preview.size > preview.values.length ? ", …" : "";
+        const row = document.createElement("div");
+        row.className = "formula-row imported-array-row";
+
+        const marker = document.createElement("span");
+        marker.className = "formula-row-number";
+        marker.textContent = "↳";
+
+        const expression = document.createElement("span");
+        expression.className = "imported-array-expression";
+        expression.textContent = `${variable.name} = [ ${values.join(", ")}${suffix} ]`;
+
+        const meta = document.createElement("span");
+        meta.className = "formula-row-result array-preview";
+        meta.textContent = `${preview.size} элементов · ${preview.shape.join(" × ")}`;
+
+        row.append(marker, expression, meta);
+        container.appendChild(row);
+    }
 }
 
 function getFormulaLines() {
@@ -924,6 +951,7 @@ async function exportPlot(fileFormat) {
             arrayCurves ? "array" : "csv",
             byId("plot-legend-visible").checked,
             byId("plot-legend-position").value,
+            getPlotSmoothing(),
         );
         if (response.cancelled) return;
         if (!response.ok) {
@@ -1010,12 +1038,14 @@ async function renderPlot() {
                 title,
                 legendVisible,
                 legendPosition,
+                getPlotSmoothing(),
             )
             : await api.render_plot_curves(
                 plotCurves,
                 title,
                 legendVisible,
                 legendPosition,
+                getPlotSmoothing(),
             );
 
         if (!response.ok) {
@@ -1041,6 +1071,21 @@ async function renderPlot() {
     } catch (error) {
         setMessage("plot-message", error.message, "error");
     }
+}
+
+function getPlotSmoothing() {
+    return {
+        enabled: byId("plot-smoothing-enabled").checked,
+        method: byId("plot-smoothing-method").value,
+        window: Number.parseInt(byId("plot-smoothing-window").value, 10) || 5,
+        polyorder: 2,
+    };
+}
+
+function updatePlotSmoothingControls() {
+    const enabled = byId("plot-smoothing-enabled").checked;
+    byId("plot-smoothing-method").disabled = !enabled;
+    byId("plot-smoothing-window").disabled = !enabled;
 }
 
 async function initialize() {
@@ -1079,6 +1124,22 @@ byId("plot-dataset").addEventListener("change", updatePlotColumns);
 byId("add-plot-curve").addEventListener("click", addPlotCurve);
 byId("add-array-curve").addEventListener("click", addArrayPlotCurve);
 byId("render-plot").addEventListener("click", renderPlot);
+byId("plot-smoothing-enabled").addEventListener("change", updatePlotSmoothingControls);
+byId("plot-smoothing-method").addEventListener("change", () => {
+    const windowInput = byId("plot-smoothing-window");
+    if (byId("plot-smoothing-method").value === "savgol") {
+        windowInput.min = "3";
+        if (Number(windowInput.value) % 2 === 0) windowInput.value = String(Number(windowInput.value) + 1);
+    } else {
+        windowInput.min = "1";
+    }
+});
+byId("plot-smoothing-window").addEventListener("change", () => {
+    const input = byId("plot-smoothing-window");
+    let value = Math.max(Number(input.min) || 1, Math.floor(Number(input.value) || 5));
+    if (byId("plot-smoothing-method").value === "savgol" && value % 2 === 0) value += 1;
+    input.value = String(value);
+});
 byId("add-plot-tab").addEventListener("click", addPlotGraph);
 byId("plot-title").addEventListener("input", () => {
     const graph = getActivePlotGraph();
