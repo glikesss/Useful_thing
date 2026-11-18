@@ -205,3 +205,28 @@ def test_array_global_does_not_break_function_compilation():
 
     assert engine.evaluate("a[i]") == 20
     assert engine.call("f", 4) == 5
+
+def test_range_generates_sequence():
+    engine = MathEngine()
+    assert np.array_equal(engine.evaluate("range(5)"), np.array([0, 1, 2, 3, 4]))
+    assert np.array_equal(engine.evaluate("range(1, 6, 2)"), np.array([1, 3, 5]))
+
+
+def test_range_can_define_array_variable():
+    engine = MathEngine()
+    engine.set_lines(["x = range(1, 5)"])
+    assert np.array_equal(engine.get_variable("x"), np.array([1, 2, 3, 4]))
+
+
+def test_range_rejects_zero_step_and_non_integer_arguments():
+    engine = MathEngine()
+    with pytest.raises(Exception):
+        engine.evaluate("range(1, 5, 0)")
+    with pytest.raises(Exception):
+        engine.evaluate("range(1, 5.5)")
+
+
+def test_linspace_generates_evenly_spaced_values():
+    engine = MathEngine()
+    assert np.allclose(engine.evaluate("linspace(0, 1, 5)"), np.array([0, .25, .5, .75, 1]))
+
