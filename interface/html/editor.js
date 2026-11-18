@@ -224,6 +224,10 @@ function renderCurveList() {
 }
 
 function addPlotCurve() {
+    if (plotCurves.some(curve => curve.source === "array")) {
+        setMessage("plot-message", "На одном графике нельзя смешивать CSV и массивы. Очистите список кривых.", "error");
+        return;
+    }
     const datasetName = byId("plot-dataset").value;
     const xColumn = byId("plot-x").value;
     const yColumn = byId("plot-y").value;
