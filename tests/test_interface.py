@@ -85,6 +85,35 @@ def test_bridge_rejects_duplicate_dataset(tmp_path):
     assert "уже существует" in response["error"]
 
 
+
+def test_bridge_exports_dataset_to_csv(tmp_path):
+    source = tmp_path / "source.csv"
+    output = tmp_path / "exported.csv"
+    source.write_text("time,value\\n0,1.5\\n1,2.5\\n", encoding="utf-8")
+
+    bridge = MathLabBridge()
+    bridge.load_csv(source, "measurement")
+
+    response = bridge.export_csv("measurement", output)
+
+    assert response["ok"] is True
+    assert output.is_file()
+    exported = pd.read_csv(output)
+    assert exported.to_dict(orient="list") == {
+        "time": [0, 1],
+        "value": [1.5, 2.5],
+    }
+
+
+def test_bridge_export_rejects_unknown_dataset(tmp_path):
+    bridge = MathLabBridge()
+
+    response = bridge.export_csv("missing", tmp_path / "missing.csv")
+
+    assert response["ok"] is False
+    assert not (tmp_path / "missing.csv").exists()
+
+
 def test_bridge_removes_dataset(tmp_path):
     path = tmp_path / "data.csv"
     path.write_text("x\n1\n", encoding="utf-8")

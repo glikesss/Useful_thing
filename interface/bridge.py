@@ -9,6 +9,7 @@ import pandas as pd
 
 from core import MathEngine
 from data import DataManager, load_csv_file
+from data.csv_loader import save_csv_file
 from plotting import PlotManager
 
 
@@ -176,6 +177,46 @@ class MathLabBridge:
             if not selected:
                 return {"ok": False, "cancelled": True}
             return self.load_csv(selected[0], name)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def export_csv(self, name, path):
+        """Export a dataset to a CSV file."""
+        try:
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("Не выбран набор данных")
+            path = Path(path)
+            with self._lock:
+                frame = self.data_manager.get_data(name)
+            save_csv_file(frame, path)
+            return {
+                "ok": True,
+                "path": str(path),
+                "message": f"Сохранено: {path.name}",
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def select_export_csv_file(self, name):
+        """Show a native save dialog and export the selected dataset."""
+        try:
+            if self._window is None:
+                raise RuntimeError("Окно приложения ещё не создано")
+
+            import webview
+            dialog_type = (
+                webview.FileDialog.SAVE
+                if hasattr(webview, "FileDialog")
+                else webview.SAVE_DIALOG
+            )
+            selected = self._window.create_file_dialog(
+                dialog_type,
+                save_filename=f"{name}.csv",
+                file_types=("CSV files (*.csv)",),
+            )
+            if not selected:
+                return {"ok": False, "cancelled": True}
+            return self.export_csv(name, selected[0])
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 

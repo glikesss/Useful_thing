@@ -215,12 +215,21 @@ function renderDatasets(datasets) {
 
         details.append(name, meta);
 
+        const actions = document.createElement("div");
+        actions.className = "dataset-actions";
+
+        const exportButton = document.createElement("button");
+        exportButton.className = "dataset-remove";
+        exportButton.textContent = "Экспорт";
+        exportButton.addEventListener("click", () => exportDataset(dataset.name));
+
         const remove = document.createElement("button");
         remove.className = "dataset-remove";
         remove.textContent = "Удалить";
         remove.addEventListener("click", () => removeDataset(dataset.name));
 
-        item.append(details, remove);
+        actions.append(exportButton, remove);
+        item.append(details, actions);
         container.appendChild(item);
 
         addOption(plotSelect, dataset.name, dataset.name);
@@ -335,6 +344,22 @@ async function loadCsv() {
 
         byId("dataset-name").value = "";
         renderState(response.state);
+        setMessage("dataset-message", response.message, "success");
+    } catch (error) {
+        setMessage("dataset-message", error.message, "error");
+    }
+}
+
+async function exportDataset(name) {
+    try {
+        const response = await api.select_export_csv_file(name);
+        if (response.cancelled) return;
+
+        if (!response.ok) {
+            setMessage("dataset-message", response.error, "error");
+            return;
+        }
+
         setMessage("dataset-message", response.message, "success");
     } catch (error) {
         setMessage("dataset-message", error.message, "error");
