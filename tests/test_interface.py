@@ -89,7 +89,10 @@ def test_bridge_rejects_duplicate_dataset(tmp_path):
 def test_bridge_exports_dataset_to_csv(tmp_path):
     source = tmp_path / "source.csv"
     output = tmp_path / "exported.csv"
-    source.write_text("time,value\\n0,1.5\\n1,2.5\\n", encoding="utf-8")
+    source.write_text("""time,value
+0,1.5
+1,2.5
+""", encoding="utf-8")
 
     bridge = MathLabBridge()
     bridge.load_csv(source, "measurement")
