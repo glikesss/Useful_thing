@@ -480,7 +480,7 @@ def test_table_export_save_dialog_handles_string_and_list_paths(
 
     source = tmp_path / "source.csv"
     output = tmp_path / "saved-table.xlsx"
-    source.write_text("time,value\\n0,1.5\\n1,2.5\\n", encoding="utf-8")
+    source.write_text("time,value\n0,1.5\n1,2.5\n", encoding="utf-8")
 
     bridge = MathLabBridge()
     bridge.load_csv(source, "measurement")
