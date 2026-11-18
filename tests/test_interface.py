@@ -181,9 +181,42 @@ def test_bridge_imports_csv_column_as_formula_array(tmp_path):
 
     assert response["ok"] is True
     assert "u" in response["state"]["arrays"]
+    imported = next(item for item in response["state"]["variables"] if item["name"] == "u")
+    assert imported["imported"] is True
+    assert imported["array_preview"]["values"] == [1.5, 2.5, 3.5]
     assert bridge.engine.get_variable("u").tolist() == [1.5, 2.5, 3.5]
     assert bridge.evaluate("u*2")["ok"] is True
     assert bridge.data_manager.get_data("measurement")["voltage"].tolist() == [1.5, 2.5, 3.5]
+
+
+def test_plot_curve_smoothing_does_not_modify_source_data():
+    frame = pd.DataFrame({
+        "time": [0, 1, 2, 3, 4],
+        "value": [0.0, 10.0, 0.0, 10.0, 0.0],
+    })
+
+    class FakePlotManager:
+        def add_curve(self, data, x_column, y_column, label=None):
+            self.data = data.copy()
+            self.x_column = x_column
+            self.y_column = y_column
+            self.label = label
+
+    manager = FakePlotManager()
+    MathLabBridge._add_plot_curve(
+        manager,
+        frame,
+        "time",
+        "value",
+        "signal",
+        {"enabled": True, "method": "moving_average", "window": 3},
+    )
+
+    assert manager.y_column == "__mathlab_smoothed__"
+    assert manager.data[manager.y_column].tolist() == pytest.approx(
+        [5.0, 10 / 3, 20 / 3, 10 / 3, 5.0]
+    )
+    assert frame["value"].tolist() == [0.0, 10.0, 0.0, 10.0, 0.0]
 
 
 def test_bridge_rejects_import_of_non_numeric_csv_column(tmp_path):
