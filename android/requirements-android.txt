@@ -1,0 +1,10 @@
+pywebview
+bottle
+proxy_tools
+typing_extensions
+sympy
+numpy
+scipy
+pandas
+matplotlib
+openpyxl
