@@ -333,3 +333,13 @@ footer {
     .formula-row-number { grid-column: 1; grid-row: 1; }
     .formula-row-input { grid-column: 2; grid-row: 1; font-size: 19px; }
 }
+
+/* Multi-dataset plotting template */
+.group-plot-panel { margin: 12px 0 18px; padding: 14px; border: 1px solid var(--border-soft); border-radius: 11px; background: rgba(16, 29, 47, .55); }
+.group-plot-controls { display: grid; grid-template-columns: minmax(180px, 1.5fr) 1fr 1fr auto; gap: 11px; align-items: end; margin-top: 12px; }
+.group-plot-controls label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
+.group-plot-controls select[multiple] { min-height: 94px; }
+.group-hint { margin: 9px 0 0; }
+.formula-row.has-error { border-color: rgba(230, 90, 90, .75); background: rgba(80, 24, 32, .22); }
+@media (max-width: 1080px) { .group-plot-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .group-plot-controls { grid-template-columns: 1fr; } }
