@@ -138,6 +138,53 @@ function updatePlotColumns() {
     byId("add-plot-curve").disabled = false;
 }
 
+function updatePlotArrays() {
+    const xSelect = byId("plot-array-x");
+    const ySelect = byId("plot-array-y");
+    const arrays = currentState?.arrays || [];
+    xSelect.replaceChildren();
+    ySelect.replaceChildren();
+
+    if (!arrays.length) {
+        addOption(xSelect, "", "Нет массивов");
+        addOption(ySelect, "", "Нет массивов");
+        xSelect.disabled = true;
+        ySelect.disabled = true;
+        byId("add-array-curve").disabled = true;
+        return;
+    }
+
+    addOption(xSelect, "", "Выберите X");
+    addOption(ySelect, "", "Выберите Y");
+    for (const name of arrays) {
+        addOption(xSelect, name, name);
+        addOption(ySelect, name, name);
+    }
+    if (arrays.length > 1) ySelect.selectedIndex = 2;
+    xSelect.disabled = false;
+    ySelect.disabled = false;
+    byId("add-array-curve").disabled = false;
+}
+
+function addArrayPlotCurve() {
+    const xName = byId("plot-array-x").value;
+    const yName = byId("plot-array-y").value;
+    if (!xName || !yName) {
+        setMessage("plot-message", "Выберите массивы X и Y", "error");
+        return;
+    }
+    if (plotCurves.some(curve => curve.source !== "array") &&
+        plotCurves.some(curve => curve.source === "array")) {
+        setMessage("plot-message", "На одном графике нельзя смешивать CSV и массивы. Очистите список кривых.", "error");
+        return;
+    }
+    const label = byId("plot-array-label").value.trim() || `${yName}(${xName})`;
+    plotCurves.push({source: "array", x_name: xName, y_name: yName, label});
+    byId("plot-array-label").value = "";
+    renderCurveList();
+    setMessage("plot-message", `Добавлена кривая: ${label}`, "success");
+}
+
 function renderCurveList() {
     const container = byId("plot-curves-list");
     container.replaceChildren();
@@ -156,8 +203,9 @@ function renderCurveList() {
         item.className = "curve-item";
 
         const label = document.createElement("span");
-        label.textContent =
-            `${curve.label} · ${curve.dataset_name} (${curve.x_column}, ${curve.y_column})`;
+        label.textContent = curve.source === "array"
+            ? `${curve.label} · массивы (${curve.x_name}, ${curve.y_name})`
+            : `${curve.label} · ${curve.dataset_name} (${curve.x_column}, ${curve.y_column})`;
 
         const remove = document.createElement("button");
         remove.className = "dataset-remove";
@@ -412,6 +460,7 @@ function renderState(state, updateEditor = false) {
     renderFormulas(state.formulas || []);
     renderVariables(state.variables);
     renderFunctions(state.functions);
+    updatePlotArrays();
     renderDatasets(state.datasets);
 }
 
@@ -609,7 +658,18 @@ async function renderPlot() {
     const title = byId("plot-title").value.trim() || null;
 
     try {
-        const response = await api.render_plot_curves(plotCurves, title);
+        const arrayCurves = plotCurves.every(curve => curve.source === "array");
+        const csvCurves = plotCurves.every(curve => curve.source !== "array");
+        if (!arrayCurves && !csvCurves) {
+            setMessage("plot-message", "Нельзя смешивать CSV и массивы на одном графике", "error");
+            return;
+        }
+        const response = arrayCurves
+            ? await api.render_plot_array_curves(
+                plotCurves.map(({x_name, y_name, label}) => ({x_name, y_name, label})),
+                title,
+            )
+            : await api.render_plot_curves(plotCurves, title);
 
         if (!response.ok) {
             setMessage("plot-message", response.error, "error");
@@ -661,6 +721,7 @@ byId("expression-input").addEventListener("keydown", event => {
 byId("load-csv").addEventListener("click", loadCsv);
 byId("plot-dataset").addEventListener("change", updatePlotColumns);
 byId("add-plot-curve").addEventListener("click", addPlotCurve);
+byId("add-array-curve").addEventListener("click", addArrayPlotCurve);
 byId("render-plot").addEventListener("click", renderPlot);
 byId("table-dataset").addEventListener("change", refreshTable);
 byId("process-dataset").addEventListener("change", updateProcessingControls);
