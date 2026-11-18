@@ -149,6 +149,47 @@ def test_bridge_renders_plot(tmp_path):
     assert response["image"].startswith("data:image/png;base64,")
 
 
+def test_bridge_imports_csv_column_as_formula_array(tmp_path):
+    path = tmp_path / "measurement.csv"
+    path.write_text("time,voltage\\n0,1.5\\n1,2.5\\n2,3.5\\n", encoding="utf-8")
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "measurement")
+
+    response = bridge.import_column_to_array("measurement", "voltage", "u")
+
+    assert response["ok"] is True
+    assert "u" in response["state"]["arrays"]
+    assert bridge.engine.get_variable("u").tolist() == [1.5, 2.5, 3.5]
+    assert bridge.evaluate("u*2")["ok"] is True
+    assert bridge.data_manager.get_data("measurement")["voltage"].tolist() == [1.5, 2.5, 3.5]
+
+
+def test_bridge_rejects_import_of_non_numeric_csv_column(tmp_path):
+    path = tmp_path / "measurement.csv"
+    path.write_text("time,label\\n0,a\\n1,b\\n", encoding="utf-8")
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "measurement")
+
+    response = bridge.import_column_to_array("measurement", "label", "labels")
+
+    assert response["ok"] is False
+    assert "нечисловые" in response["error"]
+
+
+def test_imported_array_survives_formula_rebuild(tmp_path):
+    path = tmp_path / "measurement.csv"
+    path.write_text("time,voltage\\n0,1\\n1,2\\n2,3\\n", encoding="utf-8")
+    bridge = MathLabBridge()
+    bridge.load_csv(path, "measurement")
+    assert bridge.import_column_to_array("measurement", "voltage", "u")["ok"] is True
+
+    response = bridge.set_lines(["v = u * 2"])
+
+    assert response["ok"] is True
+    assert bridge.engine.get_variable("u").tolist() == [1.0, 2.0, 3.0]
+    assert bridge.engine.get_variable("v").tolist() == [2.0, 4.0, 6.0]
+
+
 def test_bridge_renders_plot_from_formula_arrays():
     bridge = MathLabBridge()
     applied = bridge.set_lines([
