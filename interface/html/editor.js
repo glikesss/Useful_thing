@@ -201,10 +201,15 @@ function updateProcessingControls() {
 function updateProcessingOperation() {
     const operation = byId("process-operation").value;
     const isSmoothing = operation === "smooth";
+    const isFiltering = operation === "filter";
     const smoothingMethod = byId("process-smoothing-method").value;
     byId("process-smoothing-method-label").hidden = !isSmoothing;
     byId("process-window-label").hidden = !isSmoothing;
     byId("process-polyorder-label").hidden = !isSmoothing || smoothingMethod !== "savgol";
+    byId("process-minimum-label").hidden = !isFiltering;
+    byId("process-maximum-label").hidden = !isFiltering;
+    byId("process-column-label").firstChild.textContent =
+        isFiltering ? "Столбец" : "Столбец Y";
     byId("process-column").disabled = operation === "statistics" || !currentState?.datasets.length;
     byId("process-x-column").disabled = !["derivative", "integrate"].includes(operation);
 }
@@ -215,17 +220,22 @@ async function runProcessing() {
     const xColumn = byId("process-x-column").value || null;
     const window = Number(byId("process-window").value);
     try {
+        const minimumText = byId("process-minimum").value.trim();
+        const maximumText = byId("process-maximum").value.trim();
         const response = await api.process_dataset(name, operation, column, {
             x_column: xColumn,
             window,
             method: byId("process-smoothing-method").value,
             polyorder: Number(byId("process-polyorder").value),
+            minimum: minimumText === "" ? null : Number(minimumText),
+            maximum: maximumText === "" ? null : Number(maximumText),
         });
         if (!response.ok) {
             setMessage("processing-message", response.error, "error");
             return;
         }
         const descriptions = {
+            filter: `Фильтрация столбца ${column} по включительному диапазону [${minimumText || "−∞"}, ${maximumText || "+∞"}].`,
             smooth: byId("process-smoothing-method").value === "savgol"
                 ? `Савицкий — Голея: окно ${window} точек, полином ${Number(byId("process-polyorder").value)}-го порядка.`
                 : `Скользящее среднее: окно ${window} точек.`,
@@ -252,7 +262,7 @@ X: ${xColumn}
         if (response.state) renderState(response.state);
         if (response.dataset_name) {
             byId("table-dataset").value = response.dataset_name;
-            if (operation === "smooth") {
+            if (["smooth", "filter"].includes(operation)) {
                 byId("process-dataset").value = response.dataset_name;
                 updateProcessingControls();
             }
