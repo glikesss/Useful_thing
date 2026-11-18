@@ -54,8 +54,9 @@ class ParsedExpression:
 
 
 class ExpressionParser:
-    def __init__(self):
+    def __init__(self, file_provider=None):
         self.functions = {}
+        self.file_provider = file_provider
 
     @staticmethod
     def _split_assignment(source: str):
@@ -184,6 +185,7 @@ class ExpressionParser:
         converter = _ExpressionConverter(
             functions=self.functions,
             local_symbols=local_symbols or {},
+            file_provider=self.file_provider,
         )
 
         try:
@@ -199,7 +201,7 @@ class ExpressionParser:
             set(BUILTIN_FUNCTIONS)
             | set(self.functions)
             | {
-                "pi", "e", "range", "linspace",
+                "pi", "e", "range", "linspace", "file",
                 "derivative", "integral", "cumulative",
             }
         )
@@ -232,9 +234,10 @@ class ExpressionParser:
 
 
 class _ExpressionConverter:
-    def __init__(self, functions, local_symbols):
+    def __init__(self, functions, local_symbols, file_provider=None):
         self.functions = functions
         self.local_symbols = local_symbols
+        self.file_provider = file_provider
 
     @staticmethod
     def _array_operation(operation, left, right):
@@ -269,6 +272,60 @@ class _ExpressionConverter:
         if isinstance(node, ast.List | ast.Tuple):
             if not node.elts:
                 raise ParseError("Массив не может быть пустым")
+
+            # Синтаксис последовательностей: [1,...,5] или [1,1.1,...,2].
+            ellipses = [
+                index for index, item in enumerate(node.elts)
+                if isinstance(item, ast.Constant) and item.value is Ellipsis
+            ]
+            if ellipses:
+                if len(ellipses) != 1 or len(node.elts) not in (3, 4):
+                    raise ParseError(
+                        "Синтаксис последовательности: [start,...,stop] "
+                        "или [start,next,...,stop]"
+                    )
+                if ellipses[0] != len(node.elts) - 2:
+                    raise ParseError("Многоточие должно находиться перед последним элементом")
+
+                first = self.convert(node.elts[0])
+                if not isinstance(first, sp.Number) or first.is_real is not True:
+                    raise ParseError("Границы последовательности должны быть числами")
+                first = float(sp.N(first))
+
+                if len(node.elts) == 3:
+                    start, step = first, 1.0
+                else:
+                    second = self.convert(node.elts[1])
+                    if not isinstance(second, sp.Number) or second.is_real is not True:
+                        raise ParseError("Шаг последовательности должен задаваться числами")
+                    second = float(sp.N(second))
+                    start, step = second, second - first
+
+                stop_value = self.convert(node.elts[-1])
+                if not isinstance(stop_value, sp.Number) or stop_value.is_real is not True:
+                    raise ParseError("Границы последовательности должны быть числами")
+                stop = float(sp.N(stop_value))
+
+                if not all(np.isfinite(value) for value in (first, start, step, stop)):
+                    raise ParseError("Последовательность должна содержать конечные числа")
+                if step == 0:
+                    raise ParseError("Шаг последовательности не может быть равен нулю")
+                if (stop - start) * step < 0:
+                    raise ParseError("Шаг последовательности направлен от конечной точки")
+
+                count_float = (stop - start) / step
+                count = int(np.floor(count_float + 1e-10)) + 1
+                if count < 1 or count > 1_000_000:
+                    raise ParseError("Последовательность должна содержать от 1 до 1 000 000 элементов")
+                result = start + step * np.arange(count, dtype=float)
+                tolerance = max(1.0, abs(stop)) * 1e-10
+                result = result[result <= stop + tolerance] if step > 0 else result[result >= stop - tolerance]
+                if result.size == 0:
+                    raise ParseError("Последовательность не содержит элементов")
+                if abs(result[-1] - stop) <= tolerance:
+                    result[-1] = stop
+                return result
+
             values = [self.convert(item) for item in node.elts]
             try:
                 if all(
@@ -329,6 +386,46 @@ class _ExpressionConverter:
                 raise ParseError("Допускаются только прямые вызовы функций")
 
             name = node.func.id
+
+            # file() принимает строковый селектор столбца, поэтому
+            # обрабатывается до общего преобразования аргументов.
+            if name == "file":
+                if node.keywords or len(node.args) not in (1, 2):
+                    raise ParseError('Синтаксис: file(number) или file(number, "column")')
+                if self.file_provider is None:
+                    raise ParseError("Функция file() недоступна")
+                file_arg = self.convert(node.args[0])
+                if isinstance(file_arg, np.ndarray):
+                    if file_arg.ndim != 1:
+                        raise ParseError("Номера файлов должны быть одномерным массивом")
+                    file_numbers = file_arg.tolist()
+                else:
+                    file_numbers = [file_arg]
+
+                numbers = []
+                for value in file_numbers:
+                    if not isinstance(value, (int, float, np.number, sp.Number)):
+                        raise ParseError("Номер файла должен быть числом")
+                    number = float(sp.N(value)) if isinstance(value, sp.Basic) else float(value)
+                    if not np.isfinite(number) or not number.is_integer() or number < 1:
+                        raise ParseError("Номера файлов должны быть положительными целыми числами")
+                    numbers.append(int(number))
+
+                column = None
+                if len(node.args) == 2:
+                    selector = node.args[1]
+                    if isinstance(selector, ast.Constant) and isinstance(selector.value, str):
+                        column = selector.value
+                    else:
+                        column_value = self.convert(selector)
+                        if not isinstance(column_value, sp.Number) or column_value.is_real is not True:
+                            raise ParseError("Столбец задаётся названием или его номером")
+                        column = float(sp.N(column_value))
+                        if not column.is_integer() or column < 1:
+                            raise ParseError("Номер столбца должен быть положительным целым числом")
+                        column = int(column)
+
+                return self.file_provider(numbers, column)
 
             # Специальные операции математического анализа.
             # Обрабатываем AST непосредственно, чтобы переменная
