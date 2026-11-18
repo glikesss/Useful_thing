@@ -186,7 +186,7 @@ class ExpressionParser:
         source = re.sub(r"\\(?:ldots|dots|cdots)\b", "...", source)
         source = source.replace("…", "...").replace("⋯", "...")
         source = source.replace("^", "**")
-        source = source.replace(r"\\cdot", "*").replace("·", "*").replace("×", "*")
+        source = source.replace(r"\cdot", "*").replace("·", "*").replace("×", "*")
         source = self._insert_implicit_multiplication(source)
 
         try:
