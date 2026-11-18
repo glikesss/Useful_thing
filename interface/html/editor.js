@@ -583,6 +583,7 @@ function renderDatasets(datasets) {
         plotSelect.disabled = true;
         tableSelect.disabled = true;
         byId("refresh-table").disabled = true;
+        for (const id of ["export-table-png", "export-table-pdf", "export-table-xlsx"]) byId(id).disabled = true;
         updatePlotColumns();
         updatePlotGroupControls();
         renderCurveList();
@@ -648,6 +649,7 @@ function renderDatasets(datasets) {
     tableSelect.value = datasets.some(item => item.name === previousTable)
         ? previousTable
         : datasets[0].name;
+    for (const id of ["export-table-png", "export-table-pdf", "export-table-xlsx"]) byId(id).disabled = !tableSelect.value;
 
     updatePlotColumns();
     updatePlotGroupControls();
