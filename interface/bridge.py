@@ -132,7 +132,13 @@ class MathLabBridge:
 
     @staticmethod
     def _expression_mathml(expression):
-        """Render a SymPy expression as presentation MathML for the UI."""
+        """Render a SymPy expression or a numeric array as presentation MathML."""
+        if isinstance(expression, np.ndarray):
+            shape = " × ".join(str(size) for size in expression.shape)
+            return (
+                '<math xmlns="http://www.w3.org/1998/Math/MathML">'
+                f'<mtext>Массив {shape}</mtext></math>'
+            )
         try:
             body = sympy_mathml(expression, printer="presentation")
             if body.startswith("<math"):
