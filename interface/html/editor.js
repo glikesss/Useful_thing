@@ -68,10 +68,13 @@ function formulaSourceToLatex(source) {
 }
 
 function formulaMathToSource(mathfield) {
-    if (typeof mathfield.getValue === "function") {
-        return mathfield.getValue("ascii-math").trim();
-    }
-    return mathfield.value.trim();
+    let source = typeof mathfield.getValue === "function"
+        ? mathfield.getValue("ascii-math").trim()
+        : mathfield.value.trim();
+
+    // Keep named data-access functions as ordinary engine identifiers.
+    source = source.replace(/\\\\(?:operatorname|mathrm|text)\\s*\\{\\s*file\\s*\\}/g, "file");
+    return source;
 }
 
 function renderFormulaEditor(lines = [], formulas = []) {
