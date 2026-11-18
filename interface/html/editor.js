@@ -923,12 +923,21 @@ async function renderPlot() {
             setMessage("plot-message", "Нельзя смешивать CSV и массивы на одном графике", "error");
             return;
         }
+        const legendVisible = byId("plot-legend-visible").checked;
+        const legendPosition = byId("plot-legend-position").value;
         const response = arrayCurves
             ? await api.render_plot_array_curves(
                 plotCurves.map(({x_name, y_name, label}) => ({x_name, y_name, label})),
                 title,
+                legendVisible,
+                legendPosition,
             )
-            : await api.render_plot_curves(plotCurves, title);
+            : await api.render_plot_curves(
+                plotCurves,
+                title,
+                legendVisible,
+                legendPosition,
+            );
 
         if (!response.ok) {
             setMessage("plot-message", response.error, "error");
